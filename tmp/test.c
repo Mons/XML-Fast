@@ -57,6 +57,7 @@ typedef struct {
 
 typedef struct {
 	char *name;
+	unsigned int len;
 	char closed;
 } xml_node;
 
@@ -212,13 +213,13 @@ char * eat_wsp(char *p) {
 
 char * eatback_wsp(char *p) {
 	while (1) {
-		p--;
 		switch (*p) {
 			case_wsp :
 				break;
 			default:
 				return p;
 		}
+		p--;
 	}
 }
 
@@ -287,9 +288,12 @@ static void print_chain (xml_node *chain, int depth) {
 typedef struct {
 	void (*comment)(char *, unsigned int);
 	void (*cdata)(char *, unsigned int);
-	void (*tagopen)(char *, unsigned int, unsigned char); //third is openstate. 0 - tag empty, 1 - tag have no attrs, 2 - tag may have attrs
+	void (*text)(char *, unsigned int);
+	void (*tagopen)(char *, unsigned int); //third is openstate. 0 - tag empty, 1 - tag have no attrs, 2 - tag may have attrs
 	void (*attrname)(char *, unsigned int);
+	void (*attrvalpart)(char *, unsigned int);
 	void (*attrval)(char *, unsigned int);
+	void (*tagclose)(char *, unsigned int);
 } xml_callbacks;
 
 #define BUFFER 4096
@@ -299,12 +303,109 @@ typedef struct {
 
 #define xml_error(x) do { printf("Error at char %d (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
 
+char *parse_attrs(char *p, xml_callbacks * cb) {
+		char state = 0;
+		/*
+		 * state=0 - default, waiting for attr name or /?>
+		 * state=1 - reading attr name
+		 * state=2 - reading attr value
+		 */
+		char wait = 0;
+		char loop = 1;
+		char *at,*end, buffer[BUFFER],*buf;
+		p = eat_wsp(p);
+		while(loop) {
+			switch(state) {
+				case 0: // waiting for attr name
+					//printf("Want attr name, char='%c'\n",*p);
+					while(state == 0) {
+						switch(*p) {
+							case_wsp : p = eat_wsp(p); break;
+							case '>' :
+							case '?' :
+							case '/' : return p;
+							default  : state = 1;
+						}
+					}
+					break;
+				case 1: //reading attr name
+					at = p;
+					end = 0;
+					while(state == 1) {
+						switch(*p) {
+							case_wsp :
+								end = p;
+								p = eat_wsp(p);
+								if (*p != '=') {
+									printf("No = after whitespace while reading attr name\n");
+									return 0;
+								}
+							case '=':
+								if (!end) end = p;
+								if (cb->attrname) cb->attrname( at, end - at );
+								p = eat_wsp(p + 1);
+								state = 2;
+								break;
+							default: p++;
+						}
+					}
+					break;
+				case 2:
+					wait = 0;
+					while(state == 2) {
+						switch(*p) {
+							case '\'':
+							case '"':
+								if (!wait) { // got open quote
+									//printf("\tgot open quote <%c>\n",*p);
+									wait = *p;
+									//buf  = valbuf;
+									p++;
+									at = p;
+									break;
+								} else
+								if (*p == wait) {  // got close quote
+									//printf("\tgot close quote <%c>\n",*p);
+									state = 0;
+									if(cb->attrval) cb->attrval( at, p - at );
+									p = eat_wsp(p+1);
+									break;
+								}
+							case '&':
+								if (wait) {
+									//printf("Got entity begin (%s)\n",buffer);
+									buf = buffer;
+									end = p;
+									if( parse_entity(&p,&buf) ) {
+										if(cb->attrvalpart) {
+											if (end > at) cb->attrvalpart( at, end - at );
+											cb->attrvalpart( buffer, buf-buffer );
+										}
+										at = p;
+										break;
+									}
+								} else {
+									printf("Not waiting for & in state 2\n");
+									return 0;
+								}
+							default: p++;
+						}
+					}
+					break;
+				default:
+					printf("default, state=%d, char='%c'\n",state, *p);
+					return 0;
+			}
+		}
+		return p;
+}
+
 static void parse (char * xml, xml_callbacks * cb) {
 	if (!entities.more) {
 		init_entities();
 	}
 	//return;
-	char *p, *at, *end, *search, buffer[BUFFER], *buf, wait, loop;
+	char *p, *at, *end, *search, buffer[BUFFER], *buf, wait, loop, backup;
 	memset(&buffer,0,BUFFER);
 	unsigned int state, len;
 	p = xml;
@@ -317,11 +418,9 @@ static void parse (char * xml, xml_callbacks * cb) {
 	next:
 	while (1) {
 		if ( *p == '\0' ) break;
-		//printf("%c\n",*p);
 		switch(*p) {
 			case '<':
 				p++;
-				//printf("node begin, next: %c\n",*p);
 				switch (*p) {
 					case '!':
 						p++;
@@ -369,30 +468,42 @@ static void parse (char * xml, xml_callbacks * cb) {
 							goto fault;
 						}
 					case '/': // </node>
+						p++;
+						at = p;
 						search = index(p,'>');
 						if (search) {
-							//printf("found /tag node length = %d\n", search - p);
-							len = search - p + 1 - 1;
-							snprintf( buffer, len, "%s", p+1 );
-							if (strncmp(chain->name, buffer, len) == 0) {
-								printf("NODE/ CLOSE '%s'\n",buffer);
+							p = search;
+							printf("search = '%c'\n",*search);
+							search = eatback_wsp(search-1)+1;
+							printf("search = '%c'\n",*search);
+							len = search - at;
+							printf("len = %d\n",len);
+							memcpy(&buffer,at,len);
+							buffer[len] = 0;
+							if (strncmp(chain->name, at, len) == 0) {
 								if (curr_depth == 0) {
 									printf("Need to close upper than root\n");
 									goto fault;
 								}
+								if(cb->tagclose) cb->tagclose(at, len);
 								curr_depth--;
 								chain--;
 								print_chain(root, curr_depth);
 							} else {
-								printf("NODE/ CLOSE '%s' (not current)\n",buffer);
+								if(len+1 > BUFFER) {
+									snprintf(buffer,BUFFER,"%s",at);
+								} else {
+									snprintf(buffer,len+1,"%s",at);
+								}
+								//printf("NODE CLOSE '%s' (unbalanced)\n",buffer);
 								seek = chain;
 								while( seek > root ) {
 									seek--;
-									//printf("cmp %s <> %s\n",chain)
-									if (strncmp(seek->name, buffer, len) == 0) {
-										printf("Found early opened node %s\n",seek->name);
+									if (strncmp(seek->name, at, len) == 0) {
+										//printf("Found early opened node %s\n",seek->name);
 										while(chain >= seek) {
 											printf("Auto close %s\n",chain->name);
+											if(cb->tagclose) cb->tagclose(chain->name, chain->len);
 											chain--;
 											curr_depth--;
 											print_chain(root, curr_depth);
@@ -401,7 +512,7 @@ static void parse (char * xml, xml_callbacks * cb) {
 									}
 								}
 								if (seek) {
-									printf("Found no closing node until root for %s. open and close\n",buffer);
+									printf("Found no open node until root for '%s'. open and close\n",buffer);
 									print_chain(root, curr_depth);
 								}
 							}
@@ -414,62 +525,68 @@ static void parse (char * xml, xml_callbacks * cb) {
 					default:
 						buf = buffer;
 						memset(&buffer,0,BUFFER);
-						at = p;
-						while(1) {
-							switch(*p) {
-								case 0: goto fault;
-								case_wsp :
-									if (buf > buffer) {
-										*buf = 0;
-										printf("NODE(... OPEN '%s'\n",buffer);
-										
-										curr_depth++;
-										if (curr_depth != 1) chain++;
-										chain->name = malloc( buf - buffer + 1 );
-										strncpy(chain->name, buffer, buf - buffer + 1);
-										print_chain(root, curr_depth);
-										
-										p = eat_wsp(p);
-										if (*p == '>') {
-											// pass to next
-										} else {
-											if (cb->tagopen) cb->tagopen( at, p - at, NODE_OPENATTRS );
-											goto attrs;
+						state = 0;
+						while(state < 3) {
+							switch(state) {
+								case 0:
+									at = p;
+									while(state == 0) {
+										switch(*p) {
+											case_wsp :
+												if (p > at) {
+													state = 1;
+													break;
+												} else {
+													printf("Bad node opening\n");
+													goto fault;
+												}
+											case '/':
+											case '>':
+												if (p > at) {
+													state = 2;
+													break;
+												} else {
+													printf("Bad node opening\n");
+													goto fault;
+												}
+											default: p++;
 										}
-										
+									}
+									if (curr_depth++ != 0) chain++;
+									len = chain->len = p - at;
+									chain->name = malloc( chain->len + 1 );
+									strncpy(chain->name, at, len);
+									if (cb->tagopen) cb->tagopen( at, len );
+									print_chain(root, curr_depth);
+									
+									break;
+								case 1:
+									printf("reading attrs for %s\n",chain->name);
+									if (search = parse_attrs(p,cb)) {
+										p = search;
+										state = 2;
 									} else {
-										printf("Bad node opening\n");
 										goto fault;
 									}
-								case '>' :
-									if (buf > buffer) {
-										*buf = 0;
-										printf("NODE() OPEN '%s'\n",chain->name);
-										search = eatback_wsp(p);
-										if (*search == '/') {
-											printf("\tIS SINGLE\n");
-											node_closed = NODE_EMPTY;
-										} else {
-											node_closed = NODE_OPEN;
-											curr_depth++;
-											if (curr_depth != 1) chain++;
-											chain->name = malloc( buf - buffer + 1 );
-											strncpy(chain->name, buffer, buf - buffer + 1);
-											print_chain(root, curr_depth);
+								case 2:
+									while(state == 2) {
+										//printf("state=2, char='%c'\n",*p);
+										switch(*p) {
+											case_wsp : p = eat_wsp(p);
+											case '/' :
+												if (cb->tagclose) cb->tagclose( at, len );
+												chain--;
+												curr_depth--;
+												print_chain(root, curr_depth);
+												p = eat_wsp(p+1);
+											case '>' : state = 3; p++; break;
+											default  :
+												printf("bad char '%c' at the end of tag\n",*p);
+												goto fault;
 										}
-										if (cb->tagopen) cb->tagopen( at, p - at, node_closed );
-										p++;
-										goto next;
-									} else {
-										printf("Bad node opening\n");
-										goto fault;
 									}
-								default:
-									*buf = *p;
-									//printf("node: %c (buf=%s)\n",*p,buffer);
-									buf++;
+									goto next;
 							}
-							p++;
 						}
 				}
 				break;
@@ -478,41 +595,33 @@ static void parse (char * xml, xml_callbacks * cb) {
 				//p++;
 				break;
 			default:
-				//printf("1st level: fuckup? '%c'\n",*p);
-				//new
 				buf = buffer;
 				memset(&buffer,0,BUFFER);
+				at = p;
 				while (1) {
 					switch(*p) {
+						case 0: goto eod;
 						case '&':
-							if( parse_entity(&p,&buf) )
+							buf = buffer;
+							end = p;
+							if( parse_entity(&p,&buf) ) {
+								if(cb->text) {
+									if (end > at) cb->text(at, end - at);
+									cb->text(buffer, buf - buffer);
+								}
+								at = p;
 								break;
+							}
 						case '<':
-							//printf("found text node length = %d, next='%c'\n", buf - buffer,p);
-							//snprintf( buffer, search - p + 1, "%s", p );
-							*buf = '\0';
-							printf("TEXT='%s'\n",buffer);
+							if(cb->text) cb->text(at, p - at );
 							goto next;
 						default:
-							*(buf++) = *(p++);
+							p++;
+							//*(buf++) = *(p++);
 						
 					}
 				}
-				//new
 				break;
-				search = index(p,'<');
-				if (search) {
-					printf("found text node length = %d\n", search - p);
-					snprintf( buffer, search - p + 1, "%s", p );
-					printf("buffer='%s'\n",buffer);
-				} else {
-					if (*p == '\0') {
-						printf ("End of document\n");
-					} else {
-						printf ("Text node not terminated. left '%s'\n",p);
-						goto fault;
-					}
-				}
 		}
 		if ( *p == '\0' ) break;
 		p++;
@@ -522,147 +631,9 @@ static void parse (char * xml, xml_callbacks * cb) {
 	
 	int attrs;
 	
-	attrs:
-		printf("Reading attrs for <%s>\n",chain->name);
-		state = 0;
-		/*
-		 * state=0 - default, waiting for attr name or /?>
-		 * state=1 - reading attr name
-		 * state=2 - reading attr value
-		 */
-		buf = buffer;
-		wait = '\0';
-		loop = 1;
-		p = eat_wsp(p);
-		while(loop) {
-			switch(state) {
-				case 0: // waiting for attr name
-					//printf("Want attr name, char='%c'\n",*p);
-					while(state == 0) {
-						switch(*p) {
-							case_wsp :
-								p = eat_wsp(p);
-								break;
-							case '>' :
-								printf("\tno more\n");
-								p++;
-								goto next;
-							case '?' :
-							case '/' :
-								at = p;
-								p = eat_wsp(p+1); // +1 since current is / or ?
-								if (*p == '>') {
-									printf("Tag closed with %c\n",*at);
-									p++;
-									goto next;
-								} else {
-									printf("state=0 after / got='%c'\n",*p);
-									goto fault;
-								}
-							default :
-								//printf("state=0 default='%c'\n",*p);
-								buf = buffer;
-								state = 1;
-								break;
-						}
-					}
-					break;
-				case 1: //reading attr name
-					at = p;
-					end = 0;
-					while(state == 1) {
-						switch(*p) {
-							case_wsp :
-								end = p;
-								p = eat_wsp(p);
-								//printf("state=1, eaten whitespace, p='%c'\n",*p);
-								if (*p != '=') {
-									printf("No = after whitespace while reading attr name\n");
-									goto fault;
-								}
-							case '=':
-								if (!end) end = p;
-								if (cb->attrname) cb->attrname( at, end - at );
-								*buf = '\0';
-								//printf("End of attr name (%s)\n",buffer);
-								printf("\tattr.name=<%s>\n",buffer);
-								p++;
-								p = eat_wsp(p);
-								state = 2;
-								break;
-							default:
-								*(buf++) = *(p++);
-						}
-					}
-					break;
-				case 2:
-					wait = 0;
-					char *valbuf, *valcopy;
-					int  valsize, currsize;
-					valsize = 2;
-					currsize = 0;
-					valcopy = valbuf = malloc(valsize + 1);
-					while(state == 2) {
-						switch(*p) {
-							case '\'':
-							case '"':
-								if (!wait) { // got open quote
-									//printf("\tgot open quote <%c>\n",*p);
-									wait = *p;
-									buf  = valbuf;
-									p++;
-									break;
-								} else
-								if (*p == wait) {  // got close quote
-									//printf("\tgot close quote <%c>\n",*p);
-									state = 0;
-									*buf = '\0';
-									p++;
-									p = eat_wsp(p);
-									printf("\tattr.value=<%s>, next='%c'\n",valbuf,*p);
-									break;
-								}
-#define realloc_valbuf(buf,valbuf,valcopy,cursize,maxsize) \
-										maxsize *= 2;\
-										valcopy = valbuf;\
-										valbuf  = malloc( maxsize + 1 );\
-										memcpy(valbuf, valcopy, cursize);\
-										valbuf[cursize] = 0;\
-										buf = valbuf + cursize;\
-										printf("realloc: %s | %s\n",valbuf,buf);\
-										free(valcopy);
-							case '&':
-								if (wait) {
-									//printf("Got entity begin (%s)\n",buffer);
-									if (currsize + MAX_ENTITY_VAULE_LENGTH + 1 > valsize) {
-										printf("Realloc for value(1) | %d => %d\n",valsize, valsize*2);
-										realloc_valbuf(buf,valbuf,valcopy,currsize,valsize);
-									}
-									at = buf;
-									if( parse_entity(&p,&buf) ) {
-										currsize+= buf - at;
-										break;
-									}
-								} else {
-									printf("Not waiting for & in state 2\n");
-									goto fault;
-								}
-							default:
-								//printf("attr.val copy '%c'\n",*p);
-								if (currsize + 2 > valsize) {
-									realloc_valbuf(buf,valbuf,valcopy,currsize,valsize);
-								}
-								*(buf++) = *(p++);
-								currsize++;
-						}
-					}
-					break;
-				default:
-					printf("default, state=%d, char='%c'\n",state, *p);
-					goto fault;
-			}
-		}
-		goto next;
+	eod:
+		printf("End of document\n");
+		return;
 	
 	fault:
 	
@@ -687,12 +658,12 @@ void on_cdata(char * data,unsigned int length) {
 	free(buffer);
 }
 
-void on_tag_open(char * data, unsigned int length, unsigned char openstate) {
+void on_tag_open(char * data, unsigned int length) {
 	char * buffer;
 	buffer = malloc(length+1);
 	strncpy(buffer, data, length);
 	*(buffer + length) = '\0';
-	printf("CB: +<%s%s>\n",buffer, openstate == NODE_EMPTY ? " /" : openstate == NODE_OPENATTRS ? "..." :  "");
+	printf("CB: +<%s>\n",buffer);
 	free(buffer);
 }
 
@@ -701,7 +672,16 @@ void on_attr_name(char * data,unsigned int length) {
 	buffer = malloc(length+1);
 	strncpy(buffer, data, length);
 	*(buffer + length) = '\0';
-	printf("CB: ATTR '%s'=",buffer);
+	printf("CB: ATTR '%s'=\n",buffer);
+	free(buffer);
+}
+
+void on_attr_val_part(char * data,unsigned int length) {
+	char * buffer;
+	buffer = malloc(length+1);
+	strncpy(buffer, data, length);
+	*(buffer + length) = '\0';
+	printf("\t'%s'\n",buffer);
 	free(buffer);
 }
 
@@ -710,7 +690,25 @@ void on_attr_val(char * data,unsigned int length) {
 	buffer = malloc(length+1);
 	strncpy(buffer, data, length);
 	*(buffer + length) = '\0';
-	printf("'%s'\n",buffer);
+	printf("\t'%s'\n",buffer);
+	free(buffer);
+}
+
+void on_text(char * data,unsigned int length) {
+	char * buffer;
+	buffer = malloc(length+1);
+	strncpy(buffer, data, length);
+	*(buffer + length) = '\0';
+	printf("CB: TEXT='%s'\n",buffer);
+	free(buffer);
+}
+
+void on_tag_close(char * data, unsigned int length) {
+	char * buffer;
+	buffer = malloc(length+1);
+	strncpy(buffer, data, length);
+	*(buffer + length) = '\0';
+	printf("CB: -</%s>\n",buffer);
 	free(buffer);
 }
 
@@ -729,14 +727,29 @@ int main () {
 				"<more abc = \"x>\" c='qwe\"qwe' d=\"qwe'qwe\" abcd=\"1&lt;&amp;&apos;&quot;&gt11&;22\" />"
 				"</test>\n";
 	xml = "<?xml version=\"1.0\"?><test1><test2><test3>ok<i>test<b>test</i>test</b></test3></test2></test1>";
-	xml = "<?xml version=\"1.0\"?><test1 a='1&amp;234-5678-9012-3456-7890'><testi x='y' /><test2><test3><!-- comment --><![CDATA[cda]]>ok<i>test<b>test</i>test</b></test3></test2></test1> ";
+	xml = "<?xml version=\"1.0\"?>"
+			"<test1 a='1&amp;234-5678-9012-3456-7890'>"
+				"<testi x='y' />"
+				"<testz x='y' / >"
+				"<test2>"
+					"<test3>"
+						"<!-- comment -->"
+						"<![CDATA[cda]]>"
+						"ok1&amp;ok2"
+						"<i>test<b>test</i>test</b>"
+					"</test3>"
+				"</test2>"
+			"</test1 > ";
 	xml_callbacks cbs;
 	memset(&cbs,0,sizeof(xml_callbacks));
 	cbs.comment  = on_comment;
 	cbs.cdata    = on_cdata;
 	cbs.tagopen  = on_tag_open;
+	cbs.tagclose = on_tag_close;
 	cbs.attrname = on_attr_name;
+	cbs.attrvalpart  = on_attr_val_part;
 	cbs.attrval  = on_attr_val;
+	cbs.text  = on_text;
 	parse(xml,&cbs);
 	return 0;
 }
