@@ -7,8 +7,6 @@
 #define PROCESSING_INSTRUCTION 0x0001
 #define TEXT_NODE              0x0002
 
-#define is_whitespace(p)       (*(p) == '\040' || *(p) == '\009' || *(p) == '\012' || *(p) == '\015')
-//#define case_wsp               case '\040': case '\009' : case '\012' : case '\015'
 #define case_wsp   \
 		case 0x9  :\
 		case 0xa  :\
@@ -223,9 +221,6 @@ typedef struct {
 } xml_callbacks;
 
 #define BUFFER 4096
-#define NODE_EMPTY     0
-#define NODE_OPEN      1
-#define NODE_OPENATTRS 2
 
 #define xml_error(x) do { printf("Error at char %d (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
 
@@ -238,7 +233,7 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 		 */
 		char wait = 0;
 		char loop = 1;
-		char *at,*end, buffer[BUFFER],*buf;
+		char *at,*end;
 		struct entityref *entity;
 		p = eat_wsp(p);
 		while(loop) {
@@ -291,7 +286,6 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 								if (!wait) { // got open quote
 									//printf("\tgot open quote <%c>\n",*p);
 									wait = *p;
-									//buf  = valbuf;
 									p++;
 									at = p;
 									break;
@@ -306,7 +300,6 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 							case '&':
 								if (wait) {
 									//printf("Got entity begin (%s)\n",buffer);
-									buf = buffer;
 									end = p;
 									if( entity = parse_entity(&p) ) {
 										if(cb->attrvalpart) {
@@ -346,7 +339,6 @@ void parse (char * xml, xml_callbacks * cb) {
 	root = chain = malloc( sizeof(xml_node) * chain_depth );
 	unsigned char node_closed;
 	struct entityref *entity;
-	
 
 #define DOCUMENT_START 0
 #define LT_OPEN        1
