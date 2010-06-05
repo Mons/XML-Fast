@@ -18,6 +18,7 @@
 struct entityref {
 	char c;
 	char *entity;
+	unsigned int length;
 	unsigned children;
 	struct entityref *more;
 };
@@ -43,10 +44,10 @@ struct entity {
 #define ENTITY_COUNT 5
 
 static struct entity entitydef[] = {
-	 { "lt",     "<" }
-	,{ "gt",     ">" }
-	,{ "amp",    "&" }
-	,{ "apos",   "'" }
+	 { "lt",     "<"  }
+	,{ "gt",     ">"  }
+	,{ "amp",    "&"  }
+	,{ "apos",   "'"  }
 	,{ "quot",   "\"" }
 };
 
@@ -61,8 +62,8 @@ typedef struct {
 	char closed;
 } xml_node;
 
-void calculate(char *prefix, unsigned char offset, struct entity *strings, struct entityref *ents);
-void calculate(char *prefix, unsigned char offset, struct entity *strings, struct entityref *ents) {
+static void calculate(char *prefix, unsigned char offset, struct entity *strings, struct entityref *ents);
+static void calculate(char *prefix, unsigned char offset, struct entity *strings, struct entityref *ents) {
 	unsigned char counts[256];
 	unsigned char i,x,len;
 	unsigned int total = 0;
@@ -99,6 +100,7 @@ void calculate(char *prefix, unsigned char offset, struct entity *strings, struc
 		if (keep) {
 			//printf("endpoint for c='%c': %s -> %s\n", ents->c ,prefix, keep->val);
 			ents->entity = keep->val;
+			ents->length = strlen(ents->entity);
 		} else {
 			printf("fuck, not found keep");
 		}
@@ -122,86 +124,12 @@ void calculate(char *prefix, unsigned char offset, struct entity *strings, struc
 static void init_entities() {
 	calculate("",0,entitydef,&entities);
 	return;
-/*
-	static char *ents[5] = {
-		"lt",
-		"gt",
-		"amp",
-		"apos",
-		"quot",
-	};
-	char counts[256], prefix[20];
-	unsigned char i,x;
-	for (x = 0; x < 4; x++) {
-		memset(&counts,0,256);
-		for (i = 0; i < 5; i++) {
-			if (strlen(ents[i]) > x ) {
-				counts[ ents[i][x] ]++;
-			}
-		}
-		for (i = 0; i < 255; i++) {
-			if (counts[i]) {
-				printf("have %d children for '%c'\n",counts[i],i);
-			}
-		}
-		printf("\n");
-	}
-	return;
-	struct entityref *cur;
-	mkents( (&entities), 4 );
-
-	cur = entities.more;
-	cur->c = 'l';
-		mkents(cur,1);
-		cur = cur->more; // [0]
-		cur->c = 't';
-		cur->entity = "<";
-
-	cur = &( entities.more[1] );
-	cur->c = 'g';
-		mkents(cur,1);
-		cur = cur->more;
-		cur->c = 't';
-		cur->entity = ">";
-
-	cur = &( entities.more[2] );
-	cur->c = 'q';
-		mkents(cur,1);
-		cur = cur->more;
-		cur->c = 'u';
-			mkents(cur,1);
-			cur = cur->more;
-			cur->c = 'o';
-				mkents(cur,1);
-				cur = cur->more;
-				cur->c = 't';
-				cur->entity = "\"";
-
-	cur = &( entities.more[3] );
-	cur->c = 'a';
-		mkents(cur,2);
-		cur = &( entities.more[3].more[0] );
-		cur->c = 'm';
-			mkents(cur,1);
-			cur = cur->more;
-			cur->c = 'p';
-			cur->entity = "&";
-		cur = &( entities.more[3].more[1] );
-		cur->c = 'p';
-			mkents(cur,1);
-			cur = cur->more;
-			cur->c = 'o';
-				mkents(cur,1);
-				cur = cur->more;
-				cur->c = 's';
-				cur->entity = "'";
-	return;
-*/
 }
 
-char * eat_wsp(char *p) {
+static char * eat_wsp(char *p) {
 	while (1) {
 		switch (*p) {
+			case 0: return p;
 			case_wsp :
 				break;
 			default:
@@ -211,9 +139,10 @@ char * eat_wsp(char *p) {
 	}
 }
 
-char * eatback_wsp(char *p) {
+static char * eatback_wsp(char *p) {
 	while (1) {
 		switch (*p) {
+			case 0: return p;
 			case_wsp :
 				break;
 			default:
@@ -223,54 +152,51 @@ char * eatback_wsp(char *p) {
 	}
 }
 
-char parse_entity (char **pp, char **pbuf) {
+static struct entityref *parse_entity (char **pp) {
 	char *p = *pp;
-	char *buf = *pbuf;
-						struct entityref *cur_ent, *last_ent;
-						char *at;
-						at = p;
-						unsigned int i;
-						cur_ent = &entities;
-						next_ent:
-						p++;
-							if (*p == ';') {
-								if (cur_ent && cur_ent->entity) {
-									buf = strcpy(buf,cur_ent->entity) + 1;
-									//printf("Entity terminated. result='%s', buffer='%s'\n",cur_ent->entity,buf-1);
-									p++;
-									goto ret;
-								} else {
-									//printf("Entity termination while not have cur\n");
-									goto no_ent;
-								}
-							}
-							for (i=0; i < cur_ent->children; i++) {
-								//printf("\tcheck '%c' against '%c'\n", *p, cur_ent->more[i].c);
-								if (cur_ent->more[i].c == *p) {
-									cur_ent = &cur_ent->more[i];
-									//printf("found ent ref '%c' (%s)\n",cur_ent->c, cur_ent->entity ? (cur_ent->entity) : " ");
-									goto next_ent;
-								}
-							}
-							if (cur_ent && cur_ent->entity) {
-								//printf("Not found nested entity ref, but have good cur '%s'\n", cur_ent->entity);
-								buf = strcpy(buf,cur_ent->entity) + 1;
-								//p--;
-								goto ret;
-							} else {
-								//printf("Not found entity ref\n");
-							}
-						no_ent:
-						p = at;
-						*pp = p;
-						*pbuf = buf;
-						return 0;
-						
-						ret:
-						*pp = p;
-						*pbuf = buf;
-						
-						return 1;
+	struct entityref *cur_ent, *last_ent;
+	char *at;
+	at = p;
+	unsigned int i;
+	cur_ent = &entities;
+	next_ent:
+		if (*p == 0) return 0;
+		p++;
+		if (*p == 0) return 0;
+		if (*p == ';') {
+			if (cur_ent && cur_ent->entity) {
+				//printf("Entity terminated. result='%s', buffer='%s'\n",cur_ent->entity,buf-1);
+				p++;
+				goto ret;
+			} else {
+				//printf("Entity termination while not have cur\n");
+				goto no_ent;
+			}
+		}
+		for (i=0; i < cur_ent->children; i++) {
+			//printf("\tcheck '%c' against '%c'\n", *p, cur_ent->more[i].c);
+			if (cur_ent->more[i].c == *p) {
+				cur_ent = &cur_ent->more[i];
+				//printf("found ent ref '%c' (%s)\n",cur_ent->c, cur_ent->entity ? (cur_ent->entity) : " ");
+				goto next_ent;
+			}
+		}
+		if (cur_ent && cur_ent->entity) {
+			//printf("Not found nested entity ref, but have good cur '%s'\n", cur_ent->entity);
+			//p--;
+			goto ret;
+		} else {
+			//printf("Not found entity ref\n");
+		}
+	no_ent:
+	p = at;
+	*pp = p;
+	return 0;
+	
+	ret:
+	*pp = p;
+	
+	return cur_ent;
 }
 
 static void print_chain (xml_node *chain, int depth) {
@@ -313,6 +239,7 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 		char wait = 0;
 		char loop = 1;
 		char *at,*end, buffer[BUFFER],*buf;
+		struct entityref *entity;
 		p = eat_wsp(p);
 		while(loop) {
 			switch(state) {
@@ -320,6 +247,7 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 					//printf("Want attr name, char='%c'\n",*p);
 					while(state == 0) {
 						switch(*p) {
+							case 0   : printf("Document aborted\n");return 0;
 							case_wsp : p = eat_wsp(p); break;
 							case '>' :
 							case '?' :
@@ -331,8 +259,10 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 				case 1: //reading attr name
 					at = p;
 					end = 0;
+					//printf("Want = (%c)\n",*p);
 					while(state == 1) {
 						switch(*p) {
+							case 0   : printf("Document aborted\n");return 0;
 							case_wsp :
 								end = p;
 								p = eat_wsp(p);
@@ -352,8 +282,10 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 					break;
 				case 2:
 					wait = 0;
+					//printf("Want quote (%c)\n",*p);
 					while(state == 2) {
 						switch(*p) {
+							case 0   : printf("Document aborted\n");return 0;
 							case '\'':
 							case '"':
 								if (!wait) { // got open quote
@@ -376,10 +308,10 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 									//printf("Got entity begin (%s)\n",buffer);
 									buf = buffer;
 									end = p;
-									if( parse_entity(&p,&buf) ) {
+									if( entity = parse_entity(&p) ) {
 										if(cb->attrvalpart) {
 											if (end > at) cb->attrvalpart( at, end - at );
-											cb->attrvalpart( buffer, buf-buffer );
+											cb->attrvalpart( entity->entity, entity->length );
 										}
 										at = p;
 										break;
@@ -400,31 +332,46 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 		return p;
 }
 
-static void parse (char * xml, xml_callbacks * cb) {
-	if (!entities.more) {
-		init_entities();
-	}
-	//return;
+void parse (char * xml, xml_callbacks * cb) {
+	if (!entities.more) { init_entities(); }
 	char *p, *at, *end, *search, buffer[BUFFER], *buf, wait, loop, backup;
 	memset(&buffer,0,BUFFER);
 	unsigned int state, len;
+	unsigned int mainstate;
+	unsigned char textstate;
 	p = xml;
 	
 	xml_node *chain, *root, *seek;
-	int chain_depth = 16, curr_depth = 0;
+	int chain_depth = 64, curr_depth = 0;
 	root = chain = malloc( sizeof(xml_node) * chain_depth );
 	unsigned char node_closed;
+	struct entityref *entity;
 	
+
+#define DOCUMENT_START 0
+#define LT_OPEN        1
+#define COMMENT_OPEN   2
+#define CDATA_OPEN     3
+#define PI             4
+#define CONTENT_WAIT   5
+#define TAG_OPEN       6
+#define TAG_CLOSE      7
+#define TEXT_READ      8
+	mainstate = DOCUMENT_START;
 	next:
 	while (1) {
-		if ( *p == '\0' ) break;
 		switch(*p) {
+			case 0: goto eod;
 			case '<':
+				mainstate = LT_OPEN;
 				p++;
 				switch (*p) {
+					case 0: goto eod;
 					case '!':
 						p++;
+						if(*p == 0) goto eod;
 						if ( strncmp( p, "--", 2 ) == 0 ) {
+							mainstate = COMMENT_OPEN;
 							p+=2;
 							search = strstr(p,"-->");
 							if (search) {
@@ -435,9 +382,11 @@ static void parse (char * xml, xml_callbacks * cb) {
 								}
 								p = search + 3;
 							} else xml_error("Comment node not terminated");
+							mainstate = CONTENT_WAIT;
 							goto next;
 						} else
 						if ( strncmp( p, "[CDATA[", 7 ) == 0) {
+							mainstate = CDATA_OPEN;
 							p+=7;
 							search = strstr(p,"]]>");
 							if (search) {
@@ -448,6 +397,7 @@ static void parse (char * xml, xml_callbacks * cb) {
 								}
 								p = search + 3;
 							} else xml_error("Cdata node not terminated");
+							mainstate = CONTENT_WAIT;
 							goto next;
 						} else
 						{
@@ -456,30 +406,31 @@ static void parse (char * xml, xml_callbacks * cb) {
 						}
 						break;
 					case '?':
+						mainstate = PI;
 						search = strstr(p,"?>");
 						if (search) {
 							//printf("found pi node length = %d\n", search - p);
 							snprintf( buffer, search - p + 1 - 1, "%s", p+1 );
 							printf("PI: '%s'\n",buffer);
 							p = search + 2;
+							mainstate = CONTENT_WAIT;
 							goto next;
 						} else {
-							printf ("PI node not terminated");
+							printf ("PI node not terminated\n");
 							goto fault;
 						}
 					case '/': // </node>
+						mainstate = TAG_CLOSE;
 						p++;
 						at = p;
 						search = index(p,'>');
 						if (search) {
-							p = search;
-							printf("search = '%c'\n",*search);
+							p = search + 1;
+							//printf("search = '%c'\n",*search);
 							search = eatback_wsp(search-1)+1;
-							printf("search = '%c'\n",*search);
+							//printf("search = '%c'\n",*search);
 							len = search - at;
-							printf("len = %d\n",len);
-							memcpy(&buffer,at,len);
-							buffer[len] = 0;
+							//printf("len = %d\n",len);
 							if (strncmp(chain->name, at, len) == 0) {
 								if (curr_depth == 0) {
 									printf("Need to close upper than root\n");
@@ -502,7 +453,7 @@ static void parse (char * xml, xml_callbacks * cb) {
 									if (strncmp(seek->name, at, len) == 0) {
 										//printf("Found early opened node %s\n",seek->name);
 										while(chain >= seek) {
-											printf("Auto close %s\n",chain->name);
+											//printf("Auto close %s\n",chain->name);
 											if(cb->tagclose) cb->tagclose(chain->name, chain->len);
 											chain--;
 											curr_depth--;
@@ -516,22 +467,22 @@ static void parse (char * xml, xml_callbacks * cb) {
 									print_chain(root, curr_depth);
 								}
 							}
-							p = search;
-							break;
+							mainstate = CONTENT_WAIT;
+							goto next;
 						} else {
 							printf ("close tag not terminated");
 							goto fault;
 						}
-					default:
-						buf = buffer;
-						memset(&buffer,0,BUFFER);
+					default: //<node...>
 						state = 0;
+						mainstate = TAG_OPEN;
 						while(state < 3) {
 							switch(state) {
 								case 0:
 									at = p;
 									while(state == 0) {
 										switch(*p) {
+											case 0: goto eod;
 											case_wsp :
 												if (p > at) {
 													state = 1;
@@ -561,7 +512,7 @@ static void parse (char * xml, xml_callbacks * cb) {
 									
 									break;
 								case 1:
-									printf("reading attrs for %s\n",chain->name);
+									//printf("reading attrs for %s, next='%c'\n",chain->name,*p);
 									if (search = parse_attrs(p,cb)) {
 										p = search;
 										state = 2;
@@ -572,6 +523,7 @@ static void parse (char * xml, xml_callbacks * cb) {
 									while(state == 2) {
 										//printf("state=2, char='%c'\n",*p);
 										switch(*p) {
+											case 0: goto eod;
 											case_wsp : p = eat_wsp(p);
 											case '/' :
 												if (cb->tagclose) cb->tagclose( at, len );
@@ -585,6 +537,7 @@ static void parse (char * xml, xml_callbacks * cb) {
 												goto fault;
 										}
 									}
+									mainstate = CONTENT_WAIT;
 									goto next;
 							}
 						}
@@ -592,47 +545,71 @@ static void parse (char * xml, xml_callbacks * cb) {
 				break;
 			case_wsp :
 				printf("skip \\%03o\n",*p);
-				//p++;
+				p++;
 				break;
 			default:
-				buf = buffer;
-				memset(&buffer,0,BUFFER);
+				mainstate = TEXT_READ;
 				at = p;
 				while (1) {
 					switch(*p) {
-						case 0: goto eod;
+						case 0  :
+							if (p > at && cb->text) {
+								cb->text(at, p - at );
+								mainstate = CONTENT_WAIT;
+							}
+							goto eod;
 						case '&':
 							buf = buffer;
 							end = p;
-							if( parse_entity(&p,&buf) ) {
+							if( entity = parse_entity(&p) ) {
 								if(cb->text) {
 									if (end > at) cb->text(at, end - at);
-									cb->text(buffer, buf - buffer);
+									cb->text(entity->entity, entity->length);
 								}
 								at = p;
 								break;
 							}
 						case '<':
 							if(cb->text) cb->text(at, p - at );
+							mainstate = CONTENT_WAIT;
 							goto next;
-						default:
-							p++;
-							//*(buf++) = *(p++);
-						
+						default: p++;
 					}
 				}
 				break;
 		}
-		if ( *p == '\0' ) break;
-		p++;
 	}
 	printf("parse done\n");
 	return;
 	
-	int attrs;
-	
 	eod:
-		printf("End of document\n");
+		printf("End of document, mainstate=%d\n",mainstate);
+		switch(mainstate) {
+			case DOCUMENT_START:
+				printf("Empty document\n");
+				return;
+			case LT_OPEN:
+			case COMMENT_OPEN:
+			case CDATA_OPEN:
+			case PI:
+			case TAG_OPEN:
+			case TAG_CLOSE:
+				printf("Bad document end\n");
+				break;
+			case TEXT_READ:
+				printf("Need to call text cb at the end of document\n");
+				break;
+			case CONTENT_WAIT:
+				if (curr_depth == 0) {
+					printf("END ok\n");
+				} else {
+					printf("Document aborted\n");
+					print_chain(chain,curr_depth);
+				}
+				break;
+			default:
+				printf("Bad mainstate %d at the end of document\n",mainstate);
+		}
 		return;
 	
 	fault:
@@ -672,7 +649,7 @@ void on_attr_name(char * data,unsigned int length) {
 	buffer = malloc(length+1);
 	strncpy(buffer, data, length);
 	*(buffer + length) = '\0';
-	printf("CB: ATTR '%s'=\n",buffer);
+	printf("CB: ATTR '%s'=",buffer);
 	free(buffer);
 }
 
@@ -681,7 +658,7 @@ void on_attr_val_part(char * data,unsigned int length) {
 	buffer = malloc(length+1);
 	strncpy(buffer, data, length);
 	*(buffer + length) = '\0';
-	printf("\t'%s'\n",buffer);
+	printf("'%s'",buffer);
 	free(buffer);
 }
 
@@ -690,7 +667,7 @@ void on_attr_val(char * data,unsigned int length) {
 	buffer = malloc(length+1);
 	strncpy(buffer, data, length);
 	*(buffer + length) = '\0';
-	printf("\t'%s'\n",buffer);
+	printf("'%s'\n",buffer);
 	free(buffer);
 }
 
@@ -717,6 +694,16 @@ int main () {
 	//return 0;
 	printf("ok\n");
 	char *xml;
+	xml_callbacks cbs;
+	memset(&cbs,0,sizeof(xml_callbacks));
+	cbs.comment      = on_comment;
+	cbs.cdata        = on_cdata;
+	cbs.tagopen      = on_tag_open;
+	cbs.tagclose     = on_tag_close;
+	cbs.attrname     = on_attr_name;
+	cbs.attrvalpart  = on_attr_val_part;
+	cbs.attrval      = on_attr_val;
+	cbs.text         = on_text;
 	xml =	"<?xml version=\"1.0\"?>"
 			"<test>ok"
 				"<test/> "
@@ -726,7 +713,9 @@ int main () {
 				"<![CDATA[d]]>"
 				"<more abc = \"x>\" c='qwe\"qwe' d=\"qwe'qwe\" abcd=\"1&lt;&amp;&apos;&quot;&gt11&;22\" />"
 				"</test>\n";
+	//parse(xml,&cbs);
 	xml = "<?xml version=\"1.0\"?><test1><test2><test3>ok<i>test<b>test</i>test</b></test3></test2></test1>";
+	//parse(xml,&cbs);
 	xml = "<?xml version=\"1.0\"?>"
 			"<test1 a='1&amp;234-5678-9012-3456-7890'>"
 				"<testi x='y' />"
@@ -735,22 +724,42 @@ int main () {
 					"<test3>"
 						"<!-- comment -->"
 						"<![CDATA[cda]]>"
-						"ok1&amp;ok2"
+						"ok1&amp;ok2&gttest"
 						"<i>test<b>test</i>test</b>"
 					"</test3>"
 				"</test2>"
 			"</test1 > ";
-	xml_callbacks cbs;
-	memset(&cbs,0,sizeof(xml_callbacks));
-	cbs.comment  = on_comment;
-	cbs.cdata    = on_cdata;
-	cbs.tagopen  = on_tag_open;
-	cbs.tagclose = on_tag_close;
-	cbs.attrname = on_attr_name;
-	cbs.attrvalpart  = on_attr_val_part;
-	cbs.attrval  = on_attr_val;
-	cbs.text  = on_text;
 	parse(xml,&cbs);
+/*
+	xml = "";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?>";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test attr";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test attr=";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test attr='";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test attr='1'";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test attr='1'>";
+	parse(xml,&cbs);
+	xml = "<?xml version=\"1.0\"?><test attr='&g";
+	parse(xml,&cbs);
+	xml = "<test></test>";
+	parse(xml,&cbs);
+	xml = "<!";
+	parse(xml,&cbs);
+	xml = "<!--";
+	parse(xml,&cbs);
+	xml = "<![CDATA[";
+	parse(xml,&cbs);
+*/
 	return 0;
 }
 
