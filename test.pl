@@ -22,7 +22,7 @@ XML::Fast::xml2hash("<?xml version=\"1.0\"?>".
 					"</test3>".
 				"</test2>".
 				"<wsp>  abc  </wsp>".
-			"</test1 >\n", cdata => undef, join => undef);
+			"</test1 >\n", trim => 1, cdata => undef, join => undef);
 
 XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => undef);
 XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => 0);

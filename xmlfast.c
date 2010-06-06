@@ -158,7 +158,7 @@ static void print_chain (xml_node *chain, int depth) {
 	printf("\n");
 }
 
-char *parse_attrs(char *p, xml_callbacks * cb) {
+char *parse_attrs(char *p, void *ctx, xml_callbacks * cb) {
 		char state = 0;
 		/*
 		 * state=0 - default, waiting for attr name or /?>
@@ -201,7 +201,7 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 								}
 							case '=':
 								if (!end) end = p;
-								if (cb->attrname) cb->attrname( at, end - at );
+								if (cb->attrname) cb->attrname( ctx, at, end - at );
 								p = eat_wsp(p + 1);
 								state = 2;
 								break;
@@ -227,7 +227,7 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 								if (*p == wait) {  // got close quote
 									//printf("\tgot close quote <%c>\n",*p);
 									state = 0;
-									if(cb->attrval) cb->attrval( at, p - at );
+									if(cb->attrval) cb->attrval( ctx, at, p - at );
 									p = eat_wsp(p+1);
 									break;
 								}
@@ -237,8 +237,8 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 									end = p;
 									if( entity = parse_entity(&p) ) {
 										if(cb->attrvalpart) {
-											if (end > at) cb->attrvalpart( at, end - at );
-											cb->attrvalpart( entity->entity, entity->length );
+											if (end > at) cb->attrvalpart( ctx, at, end - at );
+											cb->attrvalpart( ctx, entity->entity, entity->length );
 										}
 										at = p;
 										break;
@@ -259,7 +259,7 @@ char *parse_attrs(char *p, xml_callbacks * cb) {
 		return p;
 }
 
-void parse (char * xml, xml_callbacks * cb) {
+void parse (char * xml, void * ctx, xml_callbacks * cb) {
 	if (!entities.more) { init_entities(); }
 	char *p, *at, *end, *search, buffer[BUFFER], *buf, wait, loop, backup;
 	memset(&buffer,0,BUFFER);
@@ -306,7 +306,7 @@ void parse (char * xml, xml_callbacks * cb) {
 							search = strstr(p,"-->");
 							if (search) {
 								if (cb->comment) {
-									cb->comment( p, search - p );
+									cb->comment( ctx, p, search - p );
 								} else {
 									printf("No comment callback, ignored\n");
 								}
@@ -321,7 +321,7 @@ void parse (char * xml, xml_callbacks * cb) {
 							search = strstr(p,"]]>");
 							if (search) {
 								if (cb->cdata) {
-									cb->cdata( p, search - p );
+									cb->cdata( ctx, p, search - p );
 								} else {
 									printf("No cdata callback, ignored\n");
 								}
@@ -366,7 +366,7 @@ void parse (char * xml, xml_callbacks * cb) {
 									printf("Need to close upper than root\n");
 									goto fault;
 								}
-								if(cb->tagclose) cb->tagclose(at, len);
+								if(cb->tagclose) cb->tagclose(ctx, at, len);
 								curr_depth--;
 								chain--;
 								//print_chain(root, curr_depth);
@@ -384,7 +384,7 @@ void parse (char * xml, xml_callbacks * cb) {
 										//printf("Found early opened node %s\n",seek->name);
 										while(chain >= seek) {
 											//printf("Auto close %s\n",chain->name);
-											if(cb->tagclose) cb->tagclose(chain->name, chain->len);
+											if(cb->tagclose) cb->tagclose(ctx, chain->name, chain->len);
 											chain--;
 											curr_depth--;
 											//print_chain(root, curr_depth);
@@ -440,13 +440,13 @@ void parse (char * xml, xml_callbacks * cb) {
 									len = chain->len = p - at;
 									chain->name = malloc( chain->len + 1 );
 									strncpy(chain->name, at, len);
-									if (cb->tagopen) cb->tagopen( at, len );
+									if (cb->tagopen) cb->tagopen( ctx, at, len );
 									//print_chain(root, curr_depth);
 									
 									break;
 								case 1:
 									//printf("reading attrs for %s, next='%c'\n",chain->name,*p);
-									if (search = parse_attrs(p,cb)) {
+									if (search = parse_attrs(p,ctx,cb)) {
 										p = search;
 										state = 2;
 									} else {
@@ -459,7 +459,7 @@ void parse (char * xml, xml_callbacks * cb) {
 											case 0: goto eod;
 											case_wsp : p = eat_wsp(p);
 											case '/' :
-												if (cb->tagclose) cb->tagclose( at, len );
+												if (cb->tagclose) cb->tagclose( ctx, at, len );
 												chain--;
 												curr_depth--;
 												//print_chain(root, curr_depth);
@@ -476,20 +476,6 @@ void parse (char * xml, xml_callbacks * cb) {
 						}
 				}
 				break;
-/*
-			case_wsp :
-				if (mainstate == CONTENT_WAIT) {
-					at = p;
-					p = eat_wsp(p);
-					if(cb->text) cb->text(at, p - at);
-					//mainstate = TEXT_READ;
-					break;
-				}
-				if (mainstate == TEXT_READ) {
-					printf("Got wsp in text read\n");
-				} else {
-					printf("Got wsp in %d, ready for text read\n",mainstate);
-				}*/
 			default:
 				mainstate = TEXT_READ;
 				at = p;
@@ -498,37 +484,35 @@ void parse (char * xml, xml_callbacks * cb) {
 				while (1) {
 					switch(*p) {
 						case 0  :
-							if (p > at && cb->text) {
-								cb->text(at, p - at );
+						case '<':
+							if (p > at) {
+								if (textstate == TEXT_WSP) {
+									//printf("Got trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
+									if(cb->text) cb->text(ctx, at, lastwsp - at );
+									if(cb->wsp) cb->wsp(ctx, lastwsp, p - lastwsp ); // whitespace
+								}
+								else if (textstate == TEXT_INITWSP) {
+									//printf("Got only whitespace\n");
+									if(cb->wsp) cb->wsp(ctx, at, p - at ); // whitespace
+								}
+								else
+								{
+									if(cb->text) cb->text(ctx, at, p - at );
+								}
 								mainstate = CONTENT_WAIT;
 							}
-							goto eod;
+							if (*p == 0) goto eod;
+							goto next;
 						case '&':
 							end = p;
 							if( entity = parse_entity(&p) ) {
 								if(cb->text) {
-									if (end > at) cb->text(at, end - at);
-									cb->text(entity->entity, entity->length);
+									if (end > at) cb->text(ctx, at, end - at);
+									cb->text(ctx, entity->entity, entity->length);
 								}
 								at = p;
 								break;
 							}
-						case '<':
-							if (textstate == TEXT_WSP) {
-								//printf("Got trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
-								if(cb->text) cb->text(at, lastwsp - at );
-								if(cb->wsp) cb->wsp(lastwsp, p - lastwsp ); // whitespace
-							}
-							else if (textstate == TEXT_INITWSP) {
-								//printf("Got only whitespace\n");
-								if(cb->wsp) cb->wsp(at, p - at ); // whitespace
-							}
-							else
-							{
-								if(cb->text) cb->text(at, p - at );
-							}
-							mainstate = CONTENT_WAIT;
-							goto next;
 						case_wsp :
 							if (textstate == TEXT_DATA) {
 								lastwsp = p;
@@ -538,14 +522,15 @@ void parse (char * xml, xml_callbacks * cb) {
 							break;
 						default:
 							if ( textstate == TEXT_INITWSP && p > at ) {
-								//printf("Got initial whitespace\n");
-								if (cb->wsp) cb->wsp(at, p - at );
+								printf("Got initial whitespace\n");
+								if (cb->wsp) cb->wsp(ctx, at, p - at );
 								at = p;
 							}
 							textstate = TEXT_DATA;
 							p++;
 					}
 				}
+				textstate = TEXT_INITWSP;
 				break;
 		}
 	}

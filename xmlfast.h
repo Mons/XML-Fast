@@ -33,14 +33,15 @@ typedef struct {
 } xml_node;
 
 typedef struct {
-	void (*comment)(char *, unsigned int);
-	void (*cdata)(char *, unsigned int);
-	void (*text)(char *, unsigned int);
-	void (*tagopen)(char *, unsigned int);
-	void (*attrname)(char *, unsigned int);
-	void (*attrvalpart)(char *, unsigned int);
-	void (*attrval)(char *, unsigned int);
-	void (*tagclose)(char *, unsigned int);
+	void (*comment)(void *,char *, unsigned int);
+	void (*cdata)(void *,char *, unsigned int);
+	void (*text)(void *,char *, unsigned int);
+	void (*tagopen)(void *,char *, unsigned int);
+	void (*attrname)(void *,char *, unsigned int);
+	void (*attrvalpart)(void *,char *, unsigned int);
+	void (*attrval)(void *,char *, unsigned int);
+	void (*tagclose)(void *,char *, unsigned int);
+	void (*wsp)(void *,char *, unsigned int);
 } xml_callbacks;
 
 struct entityref{
@@ -66,6 +67,6 @@ static entity entitydef[] = {
 	,{ "quot",   "\"" }
 };
 
-extern void parse (char * xml, xml_callbacks * cb);
+extern void parse (char * xml, void * ctx, xml_callbacks * cb);
 
 #endif

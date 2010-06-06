@@ -1,8 +1,5 @@
 #include "EXTERN.h"
 
-//#define PERL_IN_HV_C
-//#define PERL_HASH_INTERNAL_ACCESS
-
 #include "perl.h"
 #include "XSUB.h"
 
@@ -14,23 +11,37 @@
 #include <string.h>
 #include <strings.h>
 
-HV * NAMES;
-HV * collect;
-AV * ordered;
-//SV * nodename;
+typedef struct {
+	HV *hv;
+	unsigned int keys;
+} HVentry;
 
-HV * node_chain[1024];
-AV * node_ordered[1024];
-int node_depth;
+typedef struct {
+	// config
+	unsigned char order;
+	unsigned char trim;
+	SV  * attr;
+	SV  * text;
+	SV  * join;
+	SV  * cdata;
+	SV  * comm;
 
-char order;
+	// state
+	int depth;
+	unsigned int chainsize;
+	HV ** hchain;
+	HV  * hcurrent;
+	SV  * attrname;
+	SV  * attrval;
+	
+} parsestate;
 
 #define hv_store_a( hv, key, sv ) \
 	STMT_START { \
 		SV **exists; \
 		char *kv = SvPV_nolen(key); \
 		int   kl = SvCUR(key); \
-		if( exists = hv_fetch(collect, kv, kl, 0) ) { \
+		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
 			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
 				AV *av = (AV *) SvRV( *exists ); \
 				av_push( av, sv ); \
@@ -40,10 +51,10 @@ char order;
 				sv_copypv(old,*exists); \
 				av_push( av, old ); \
 				av_push( av, sv ); \
-				hv_store( collect, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
+				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
 			} \
 		} else { \
-			hv_store(collect, kv, kl, sv, 0); \
+			hv_store(hv, kv, kl, sv, 0); \
 		} \
 	} STMT_END
 
@@ -52,107 +63,78 @@ char order;
 		SV **exists; \
 		char *kv = SvPV_nolen(key); \
 		int   kl = SvCUR(key); \
-		if( exists = hv_fetch(collect, kv, kl, 0) ) { \
+		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
 			sv_catpvn(*exists, data,length);\
 			\
 		} else { \
 			SV *sv = newSVpvn(data, length); \
-			hv_store(collect, kv, kl, sv, 0); \
+			hv_store(hv, kv, kl, sv, 0); \
 		} \
 	} STMT_END
 
-void on_comment(char * data,unsigned int length) {
-	SV *sv   = newSVpvn(data, length);
-	SV **key = hv_fetch(NAMES, "comm", 4, 0);
-	SV **exists;
-	if (key && SvOK(*key)) {
-		hv_store_a(collect, *key, sv );
-	} else {
-		printf("Ignore Comment\n");
-	}
+void on_comment(void * pctx, char * data,unsigned int length) {
+	parsestate *ctx = pctx;
+	SV         *sv  = newSVpvn(data, length);
+	hv_store_a(ctx->hcurrent, ctx->comm, sv );
 }
 
-void on_cdata(char * data,unsigned int length) {
+void on_cdata(void * pctx, char * data,unsigned int length) {
+	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
-	SV **key;
-	if ((key = hv_fetch(NAMES, "cdata", 5, 0)) && SvOK(*key)) {
-		//hv_store_cat(collect, *key, data, length);
-		hv_store_a(collect, *key, sv );
-	} else
-	if ((key = hv_fetch(NAMES, "text", 4, 0)) && SvOK(*key)) {
-		//hv_store_cat(collect, *key, data, length);
-		hv_store_a(collect, *key, sv );
-	} else
-	{
-		printf("Ignore CDATA\n");
-	}
+	hv_store_a(ctx->hcurrent, ctx->cdata, sv );
 }
 
-void on_wsp(char * data,unsigned int length) {
-	SV *sv   = newSVpvn(data, length);
-	//printf("Got WSP '%s'\n",SvPV_nolen(sv));
-	SV **key = hv_fetch(NAMES, "text", 4, 0);
-	SV **pval;
-	if (key && SvOK(*key)) {
-		//hv_store_cat(collect, *key, data, length);
-		hv_store_a(collect, *key, sv );
-	} else {
-		printf("Ignore WSP\n");
-	}
-}
-
-void on_text(char * data,unsigned int length) {
+void on_text(void * pctx, char * data,unsigned int length) {
+	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
 	//printf("Got text '%s'\n",SvPV_nolen(sv));
-	SV **key = hv_fetch(NAMES, "text", 4, 0);
-	SV **pval;
-	if (key && SvOK(*key)) {
-		//hv_store_cat(collect, *key, data, length);
-		hv_store_a(collect, *key, sv );
-	} else {
-		printf("Ignore TEXT\n");
-	}
+	hv_store_a(ctx->hcurrent, ctx->text, sv );
 }
 
-void on_tag_open(char * data, unsigned int length) {
+void on_tag_open(void * pctx, char * data, unsigned int length) {
+	parsestate *ctx = pctx;
 	SV *sv;
-	if (order){
-		AV * av = newAV();
-		sv = newRV_noinc( (SV *) av );
-		node_depth++;
-		node_ordered[node_depth] = ordered;
-		ordered = av;
-	} else {
-		HV * hv = newHV();
-		sv = newRV_noinc( (SV *) hv );
-		hv_store(collect, data, length, sv, 0);
-		node_depth++;
-		node_chain[node_depth] = collect;
-		collect = hv;
+	HV * hv = newHV();
+	sv = newRV_noinc( (SV *) hv );
+	hv_store(ctx->hcurrent, data, length, sv, 0);
+	ctx->depth++;
+	if (ctx->depth >= ctx->chainsize) {
+		Perl_warn(aTHX_ "XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
+		HV ** keep = ctx->hchain;
+		ctx->hchain = malloc( sizeof(ctx->hcurrent) * ctx->chainsize * 2);
+		memcpy(ctx->hchain, keep, sizeof(ctx->hcurrent) * ctx->chainsize * 2);
+		ctx->chainsize *= 2;
+		free(keep);
 	}
+
+	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
+	//node_depth++;
+	//node_chain[node_depth] = collect;
+	ctx->hcurrent = hv;
 }
 
-void on_tag_close(char * data, unsigned int length) {
+void on_tag_close(void * pctx, char * data, unsigned int length) {
+	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
 	// TODO: check node name
 	
 	// Text joining
 	SV **text;
-	SV **key;
-	if ((key = hv_fetch(NAMES, "text", 4, 0)) && SvOK(*key)) {
-		if ((text = hv_fetch(collect, SvPV_nolen(*key), SvCUR(*key), 0)) && SvOK(*text)) {
+	if (ctx->text) {
+		//printf("Hash=%s\n",SvPV_nolen( hv_scalar(ctx->hcurrent) ));
+		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
 			if (SvTYPE( SvRV(*text) ) == SVt_PVAV) {
 				AV *av = (AV *) SvRV( *text );
 				SV *svtext = newSV(0);
 				SV **join;// = newSVpvn("+",1);
 				SV **val;
 				I32 len = 0, avlen = av_len(av);
-				if ((join = hv_fetch(NAMES, "join", 4, 0)) && SvOK(*join)) {
-					if (SvCUR(*join)) {
+				if (ctx->join) {
+					if (SvCUR(ctx->join)) {
 						//printf("Join length = %d\n",SvCUR(*join));
 						for ( len = 0; len < avlen; len++ ) {
 							if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
-								if(len > 0) { sv_catsv(svtext,*join); }
+								if(len > 0) { sv_catsv(svtext,ctx->join); }
 								sv_catsv(svtext,*val);
 							}
 						}
@@ -165,7 +147,7 @@ void on_tag_close(char * data, unsigned int length) {
 						}
 					}
 					//printf("Joined: %s\n",SvPV_nolen(svtext));
-					hv_store(collect, SvPV_nolen(*key), SvCUR(*key), svtext, 0);
+					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
 				else
 				if ( avlen == 1 ) {
@@ -173,7 +155,7 @@ void on_tag_close(char * data, unsigned int length) {
 					if (val && SvOK(*val)) {
 						sv_catsv(svtext,*val);
 					}
-					hv_store(collect, SvPV_nolen(*key), SvCUR(*key), svtext, 0);
+					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
 			}
 			
@@ -181,54 +163,56 @@ void on_tag_close(char * data, unsigned int length) {
 	}
 	// Text joining
 	
-	if (node_depth > -1) {
-		collect = node_chain[node_depth];
-		node_depth--;
+	if (ctx->depth > -1) {
+		ctx->hcurrent = ctx->hchain[ ctx->depth ];
+		ctx->depth--;
+		//collect = node_chain[node_depth];
+		//node_depth--;
 	} else {
-		croak("Bad depth: %d for tag close %s\n",node_depth,SvPV_nolen(sv));
+		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(sv));
 	}
 }
 
-SV *attrname;
-SV *attrval;
-
-void on_attr_name(char * data,unsigned int length) {
-	if (attrname) {
-		croak("Called attrname, while have attrname=%s\n",SvPV_nolen(attrname));
+void on_attr_name(void * pctx, char * data,unsigned int length) {
+	parsestate *ctx = pctx;
+	if (ctx->attrname) {
+		croak("Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
 	}
 	SV **key;
-	if( key = hv_fetch(NAMES, "attr", 4, 0) ) {
-		attrname = newSV(0);
-		sv_copypv(attrname,*key);
-		sv_catpvn(attrname, data, length);
+	if( ctx->attr ) {
+		ctx->attrname = newSV(0);
+		sv_copypv(ctx->attrname,ctx->attr);
+		sv_catpvn(ctx->attrname, data, length);
 	} else {
-		attrname = newSVpvn(data, length);
+		ctx->attrname = newSVpvn(data, length);
 	}
 }
 
-void on_attr_val_part(char * data,unsigned int length) {
-	if(!attrname) {
+void on_attr_val_part(void * pctx, char * data,unsigned int length) {
+	parsestate *ctx = pctx;
+	if(!ctx->attrname) {
 		croak("Got attrval without attrname\n");
 	}
-	if (attrval) {
-		sv_catpvn(attrval, data, length);
+	if (ctx->attrval) {
+		sv_catpvn(ctx->attrval, data, length);
 	} else {
-		attrval = newSVpvn(data, length);
+		ctx->attrval = newSVpvn(data, length);
 	}
 }
 
-void on_attr_val(char * data,unsigned int length) {
-	if(!attrname) {
+void on_attr_val(void * pctx, char * data,unsigned int length) {
+	parsestate *ctx = pctx;
+	if(!ctx->attrname) {
 		croak("Got attrval without attrname\n");
 	}
-	if (attrval) {
-		sv_catpvn(attrval, data, length);
+	if (ctx->attrval) {
+		sv_catpvn(ctx->attrval, data, length);
 	} else {
-		attrval = newSVpvn(data, length);
+		ctx->attrval = newSVpvn(data, length);
 	}
-	hv_store_a(collect, attrname, attrval);
-	attrname = 0;
-	attrval = 0;
+	hv_store_a(ctx->hcurrent, ctx->attrname, ctx->attrval);
+	ctx->attrname = 0;
+	ctx->attrval = 0;
 }
 
 MODULE = XML::Fast		PACKAGE = XML::Fast
@@ -238,44 +222,79 @@ _xml2hash(xml,conf)
 		char *xml;
 		HV *conf;
 	CODE:
-		NAMES = conf;
-		/*
-		hv_store(NAMES, "order", 5, newSViv(0), 0 );
-		hv_store(NAMES, "attr",  4, newSVpvn("-",1), 0 );
-		hv_store(NAMES, "text",  4, newSVpvn("#text",5), 0 );
-		hv_store(NAMES, "join",  4, newSVpvn("",0), 0 );
-		hv_store(NAMES, "trim",  5, newSViv(1), 0 );
-		hv_store(NAMES, "cdata", 5, newSVpvn("#",1), 0 );
-		hv_store(NAMES, "comm",  4, newSVpvn("//",2), 0 );
-		*/
-		order = 0;//hv_fetch(NAMES,"order",5,0);
+		parsestate ctx;
+		memset(&ctx,0,sizeof(parsestate));
+		SV **key;
+		if ((key = hv_fetch(conf, "order", 5, 0)) && SvTRUE(*key)) {
+			ctx.order = 1;
+		}
+		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
+			ctx.trim = 1;
+		}
+		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
+			ctx.trim = 1;
+		}
+		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
+			sv_copypv(ctx.attr = newSV(0),*key);
+		}
+		if ((key = hv_fetch(conf, "text", 4, 0)) && SvPOK(*key)) {
+			sv_copypv(ctx.text = newSV(0),*key);
+		}
+		if ((key = hv_fetch(conf, "join", 4, 0)) && SvPOK(*key)) {
+			sv_copypv(ctx.join = newSV(0),*key);
+		}
+		if ((key = hv_fetch(conf, "cdata", 5, 0)) && SvPOK(*key)) {
+			sv_copypv(ctx.cdata = newSV(0),*key);
+		}
+		if ((key = hv_fetch(conf, "comm", 4, 0)) && SvPOK(*key)) {
+			sv_copypv(ctx.comm = newSV(0),*key);
+		}
+		
+		if ((key = hv_fetch(conf, "_max_depth", 10, 0)) && SvOK(*key)) {
+			ctx.chainsize = SvIV(*key);
+			if (ctx.chainsize < 1) {
+				croak("_max_depth contains bad value (%d)",ctx.chainsize);
+			}
+		} else {
+			ctx.chainsize = 256;
+		}
+		
+		
 		xml_callbacks cbs;
 		memset(&cbs,0,sizeof(xml_callbacks));
-		if (order) {
+		if (ctx.order) {
 			croak("Ordered mode not implemented yet\n");
 		} else{
-			collect = newHV();
-			RETVAL = newRV_noinc( (SV *) collect );
-			cbs.comment      = on_comment;
-			cbs.cdata        = on_cdata;
+			ctx.hcurrent = newHV();
+			
+			ctx.hchain = malloc( sizeof(ctx.hcurrent) * ctx.chainsize);
+			ctx.depth = -1;
+			
+			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
 			cbs.tagopen      = on_tag_open;
 			cbs.tagclose     = on_tag_close;
 			cbs.attrname     = on_attr_name;
 			cbs.attrvalpart  = on_attr_val_part;
 			cbs.attrval      = on_attr_val;
-			cbs.text         = on_text;
-			SV **trim;
-			if ((trim = hv_fetch(NAMES, "trim", 4, 0)) && SvTRUE(*trim)) {
-				printf("Have trim option\n");
-			} else {
-				printf("Have no trim option\n");
-				cbs.wsp          = on_wsp;
-			}
+			
+			if(ctx.comm)
+				cbs.comment      = on_comment;
+			
+			if(ctx.cdata)
+				cbs.cdata        = on_cdata;
+			else if(ctx.text)
+				cbs.cdata        = on_text;
+			
+			if(ctx.text)
+				cbs.text         = on_text;
+			
+			if (!ctx.trim)
+				cbs.wsp          = on_text;
 		}
 		
-		node_depth = -1;
+		parse(xml,&ctx,&cbs);
 		
-		parse(xml,&cbs);
+		free(ctx.hchain);
 		
 	OUTPUT:
 		RETVAL
