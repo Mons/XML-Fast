@@ -12,11 +12,6 @@
 #include <strings.h>
 
 typedef struct {
-	HV *hv;
-	unsigned int keys;
-} HVentry;
-
-typedef struct {
 	// config
 	unsigned char order;
 	unsigned char trim;
@@ -31,8 +26,7 @@ typedef struct {
 	unsigned int chainsize;
 	HV ** hchain;
 	HV  * hcurrent;
-	HVentry ** hechain;
-	HVentry  * hecurrent;
+	SV  * ctag;
 	SV  * attrname;
 	SV  * attrval;
 	
@@ -95,10 +89,9 @@ void on_text(void * pctx, char * data,unsigned int length) {
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
 	parsestate *ctx = pctx;
-	SV *sv;
 	HV * hv = newHV();
-	sv = newRV_noinc( (SV *) hv );
-	hv_store(ctx->hcurrent, data, length, sv, 0);
+	//SV *sv = newRV_noinc( (SV *) hv );
+	//hv_store(ctx->hcurrent, data, length, sv, 0);
 	ctx->depth++;
 	if (ctx->depth >= ctx->chainsize) {
 		Perl_warn(aTHX_ "XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
@@ -117,21 +110,26 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 
 void on_tag_close(void * pctx, char * data, unsigned int length) {
 	parsestate *ctx = pctx;
-	SV *sv   = newSVpvn(data, length);
 	// TODO: check node name
 	
 	// Text joining
 	SV **text;
+	I32 keys = HvKEYS(ctx->hcurrent);
+	SV  *svtext = 0;
 	if (ctx->text) {
-		//printf("Hash=%s\n",SvPV_nolen( hv_scalar(ctx->hcurrent) ));
+		printf("Hash=%s | %d\n",SvPV_nolen( hv_scalar(ctx->hcurrent) ), keys);
+		
+		//unsigned char count;
+		//hv_iterinit(ctx->hcurrent);
+		
 		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
 			if (SvTYPE( SvRV(*text) ) == SVt_PVAV) {
 				AV *av = (AV *) SvRV( *text );
-				SV *svtext = newSV(0);
 				SV **join;// = newSVpvn("+",1);
 				SV **val;
 				I32 len = 0, avlen = av_len(av);
 				if (ctx->join) {
+					svtext = newSV(0);
 					if (SvCUR(ctx->join)) {
 						//printf("Join length = %d\n",SvCUR(*join));
 						for ( len = 0; len < avlen; len++ ) {
@@ -153,24 +151,38 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 				}
 				else
 				if ( avlen == 1 ) {
+					svtext = newSV(0);
 					val = av_fetch(av,0,0);
 					if (val && SvOK(*val)) {
 						sv_catsv(svtext,*val);
 					}
 					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
+				else
+				{
+					// Remebmer for use if it is single
+					svtext = (SV *)newRV_noinc( (SV *) av );
+				}
+			} else {
+				svtext = *text;
 			}
-			
 		}
 	}
 	// Text joining
 	
 	if (ctx->depth > -1) {
+		HV *hv = ctx->hcurrent;
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
 		ctx->depth--;
-		//collect = node_chain[node_depth];
-		//node_depth--;
+		if (keys == 1 && svtext) {
+			//printf("%s have only text node='%s'\n", SvPV_nolen(sv), SvPV_nolen(svtext));
+			hv_store(ctx->hcurrent, data, length, svtext, 0);
+		} else {
+			SV *sv = newRV_noinc( (SV *) hv );
+			hv_store(ctx->hcurrent, data, length, sv, 0);
+		}
 	} else {
+		SV *sv   = newSVpvn(data, length);
 		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(sv));
 	}
 }
@@ -267,13 +279,10 @@ _xml2hash(xml,conf)
 		if (ctx.order) {
 			croak("Ordered mode not implemented yet\n");
 		} else{
-			HVenrty c;
-			ctx.hecurrent = c;
-			ctx.hchain    = malloc( sizeof(ctx.hecurrent) * ctx.chainsize);
-			
 			ctx.hcurrent = newHV();
-			ctx.hchain   = malloc( sizeof(ctx.hcurrent) * ctx.chainsize);
-			ctx.depth    = -1;
+			
+			ctx.hchain = malloc( sizeof(ctx.hcurrent) * ctx.chainsize);
+			ctx.depth = -1;
 			
 			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
 			cbs.tagopen      = on_tag_open;
