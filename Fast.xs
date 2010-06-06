@@ -31,6 +31,8 @@ typedef struct {
 	unsigned int chainsize;
 	HV ** hchain;
 	HV  * hcurrent;
+	HVentry ** hechain;
+	HVentry  * hecurrent;
 	SV  * attrname;
 	SV  * attrval;
 	
@@ -265,10 +267,13 @@ _xml2hash(xml,conf)
 		if (ctx.order) {
 			croak("Ordered mode not implemented yet\n");
 		} else{
-			ctx.hcurrent = newHV();
+			HVenrty c;
+			ctx.hecurrent = c;
+			ctx.hchain    = malloc( sizeof(ctx.hecurrent) * ctx.chainsize);
 			
-			ctx.hchain = malloc( sizeof(ctx.hcurrent) * ctx.chainsize);
-			ctx.depth = -1;
+			ctx.hcurrent = newHV();
+			ctx.hchain   = malloc( sizeof(ctx.hcurrent) * ctx.chainsize);
+			ctx.depth    = -1;
 			
 			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
 			cbs.tagopen      = on_tag_open;
