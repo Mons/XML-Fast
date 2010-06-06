@@ -268,7 +268,7 @@ void parse (char * xml, xml_callbacks * cb) {
 	unsigned char textstate;
 	p = xml;
 	
-	xml_node *chain, *root, *seek;
+	xml_node *chain, *root, *seek, *reverse;
 	int chain_depth = 64, curr_depth = 0;
 	root = chain = malloc( sizeof(xml_node) * chain_depth );
 	unsigned char node_closed;
@@ -337,7 +337,7 @@ void parse (char * xml, xml_callbacks * cb) {
 						if (search) {
 							//printf("found pi node length = %d\n", search - p);
 							snprintf( buffer, search - p + 1 - 1, "%s", p+1 );
-							printf("PI: '%s'\n",buffer);
+							//printf("PI: '%s'\n",buffer);
 							p = search + 2;
 							mainstate = CONTENT_WAIT;
 							goto next;
@@ -365,7 +365,7 @@ void parse (char * xml, xml_callbacks * cb) {
 								if(cb->tagclose) cb->tagclose(at, len);
 								curr_depth--;
 								chain--;
-								print_chain(root, curr_depth);
+								//print_chain(root, curr_depth);
 							} else {
 								if(len+1 > BUFFER) {
 									snprintf(buffer,BUFFER,"%s",at);
@@ -383,14 +383,17 @@ void parse (char * xml, xml_callbacks * cb) {
 											if(cb->tagclose) cb->tagclose(chain->name, chain->len);
 											chain--;
 											curr_depth--;
-											print_chain(root, curr_depth);
+											//print_chain(root, curr_depth);
 										}
 										seek = 0;
+										break;
 									}
 								}
 								if (seek) {
-									printf("Found no open node until root for '%s'. open and close\n",buffer);
-									print_chain(root, curr_depth);
+									printf("# Found no open node until root for '%s'. open and close\n",buffer);
+									//print_chain(root, curr_depth);
+								} else {
+									// TODO
 								}
 							}
 							mainstate = CONTENT_WAIT;
@@ -434,7 +437,7 @@ void parse (char * xml, xml_callbacks * cb) {
 									chain->name = malloc( chain->len + 1 );
 									strncpy(chain->name, at, len);
 									if (cb->tagopen) cb->tagopen( at, len );
-									print_chain(root, curr_depth);
+									//print_chain(root, curr_depth);
 									
 									break;
 								case 1:
@@ -455,7 +458,7 @@ void parse (char * xml, xml_callbacks * cb) {
 												if (cb->tagclose) cb->tagclose( at, len );
 												chain--;
 												curr_depth--;
-												print_chain(root, curr_depth);
+												//print_chain(root, curr_depth);
 												p = eat_wsp(p+1);
 											case '>' : state = 3; p++; break;
 											default  :
@@ -470,7 +473,7 @@ void parse (char * xml, xml_callbacks * cb) {
 				}
 				break;
 			case_wsp :
-				printf("skip \\%03o\n",*p);
+				//printf("skip \\%03o\n",*p);
 				p++;
 				break;
 			default:
@@ -509,7 +512,7 @@ void parse (char * xml, xml_callbacks * cb) {
 	return;
 	
 	eod:
-		printf("End of document, mainstate=%d\n",mainstate);
+		//printf("End of document, mainstate=%d\n",mainstate);
 		switch(mainstate) {
 			case DOCUMENT_START:
 				printf("Empty document\n");
@@ -527,10 +530,10 @@ void parse (char * xml, xml_callbacks * cb) {
 				break;
 			case CONTENT_WAIT:
 				if (curr_depth == 0) {
-					printf("END ok\n");
+					//printf("END ok\n");
 				} else {
 					printf("Document aborted\n");
-					print_chain(chain,curr_depth);
+					//print_chain(chain,curr_depth);
 				}
 				break;
 			default:

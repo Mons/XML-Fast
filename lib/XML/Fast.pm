@@ -16,7 +16,7 @@ our @ISA = qw(Exporter);
 # If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
 # will save memory.
 our %EXPORT_TAGS = ( 'all' => [ qw(
-	
+	xml2hash
 ) ] );
 
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
@@ -29,6 +29,23 @@ our $VERSION = '0.01';
 
 require XSLoader;
 XSLoader::load('XML::Fast', $VERSION);
+
+sub xml2hash($;%) {
+	my $xml = shift;
+	my %args = (
+		order  => 0,
+		attr   => '-',
+		text   => '#text',
+		join   => '',
+		trim   => 1,
+		cdata  => undef,
+		comm   => undef,
+		cdata  => '#',
+		comm   => '//',
+		@_
+	);
+	_xml2hash($xml,\%args);
+}
 
 # Preloaded methods go here.
 
