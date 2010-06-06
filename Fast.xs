@@ -161,7 +161,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 				else
 				{
 					// Remebmer for use if it is single
-					svtext = (SV *)newRV_noinc( (SV *) av );
+					svtext = newRV_noinc( (SV *) av );
 				}
 			} else {
 				svtext = *text;
