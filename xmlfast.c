@@ -283,6 +283,10 @@ void parse (char * xml, xml_callbacks * cb) {
 #define TAG_OPEN       6
 #define TAG_CLOSE      7
 #define TEXT_READ      8
+#define TEXT_DATA      9
+#define TEXT_INITWSP  10
+#define TEXT_WSP      11
+
 	mainstate = DOCUMENT_START;
 	next:
 	while (1) {
@@ -391,7 +395,7 @@ void parse (char * xml, xml_callbacks * cb) {
 								}
 								if (seek) {
 									printf("# Found no open node until root for '%s'. open and close\n",buffer);
-									//print_chain(root, curr_depth);
+									print_chain(root, curr_depth);
 								} else {
 									// TODO
 								}
@@ -472,13 +476,25 @@ void parse (char * xml, xml_callbacks * cb) {
 						}
 				}
 				break;
+/*
 			case_wsp :
-				//printf("skip \\%03o\n",*p);
-				p++;
-				break;
+				if (mainstate == CONTENT_WAIT) {
+					at = p;
+					p = eat_wsp(p);
+					if(cb->text) cb->text(at, p - at);
+					//mainstate = TEXT_READ;
+					break;
+				}
+				if (mainstate == TEXT_READ) {
+					printf("Got wsp in text read\n");
+				} else {
+					printf("Got wsp in %d, ready for text read\n",mainstate);
+				}*/
 			default:
 				mainstate = TEXT_READ;
 				at = p;
+				textstate = TEXT_INITWSP;
+				char *lastwsp;
 				while (1) {
 					switch(*p) {
 						case 0  :
@@ -488,7 +504,6 @@ void parse (char * xml, xml_callbacks * cb) {
 							}
 							goto eod;
 						case '&':
-							buf = buffer;
 							end = p;
 							if( entity = parse_entity(&p) ) {
 								if(cb->text) {
@@ -499,10 +514,36 @@ void parse (char * xml, xml_callbacks * cb) {
 								break;
 							}
 						case '<':
-							if(cb->text) cb->text(at, p - at );
+							if (textstate == TEXT_WSP) {
+								//printf("Got trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
+								if(cb->text) cb->text(at, lastwsp - at );
+								if(cb->wsp) cb->wsp(lastwsp, p - lastwsp ); // whitespace
+							}
+							else if (textstate == TEXT_INITWSP) {
+								//printf("Got only whitespace\n");
+								if(cb->wsp) cb->wsp(at, p - at ); // whitespace
+							}
+							else
+							{
+								if(cb->text) cb->text(at, p - at );
+							}
 							mainstate = CONTENT_WAIT;
 							goto next;
-						default: p++;
+						case_wsp :
+							if (textstate == TEXT_DATA) {
+								lastwsp = p;
+							}
+							if (textstate != TEXT_INITWSP) textstate = TEXT_WSP;
+							p++;
+							break;
+						default:
+							if ( textstate == TEXT_INITWSP && p > at ) {
+								//printf("Got initial whitespace\n");
+								if (cb->wsp) cb->wsp(at, p - at );
+								at = p;
+							}
+							textstate = TEXT_DATA;
+							p++;
 					}
 				}
 				break;

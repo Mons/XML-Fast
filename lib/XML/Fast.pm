@@ -33,13 +33,13 @@ XSLoader::load('XML::Fast', $VERSION);
 sub xml2hash($;%) {
 	my $xml = shift;
 	my %args = (
-		order  => 0,
-		attr   => '-',
-		text   => '#text',
-		join   => '',
-		trim   => 1,
-		cdata  => undef,
-		comm   => undef,
+		order  => 0,        # not impl
+		attr   => '-',      # ok
+		text   => '#text',  # ok
+		join   => '',       # ok
+		trim   => 1,        # ok
+		cdata  => undef,    # ok + fallback -> text
+		comm   => undef,    # ok
 		cdata  => '#',
 		comm   => '//',
 		@_

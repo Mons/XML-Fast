@@ -25,45 +25,90 @@ int node_depth;
 
 char order;
 
+#define hv_store_a( hv, key, sv ) \
+	STMT_START { \
+		SV **exists; \
+		char *kv = SvPV_nolen(key); \
+		int   kl = SvCUR(key); \
+		if( exists = hv_fetch(collect, kv, kl, 0) ) { \
+			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
+				AV *av = (AV *) SvRV( *exists ); \
+				av_push( av, sv ); \
+			} else { \
+				AV *av   = newAV(); \
+				SV *old  = newSV(0); \
+				sv_copypv(old,*exists); \
+				av_push( av, old ); \
+				av_push( av, sv ); \
+				hv_store( collect, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
+			} \
+		} else { \
+			hv_store(collect, kv, kl, sv, 0); \
+		} \
+	} STMT_END
+
+#define hv_store_cat( hv, key, data, length ) \
+	STMT_START { \
+		SV **exists; \
+		char *kv = SvPV_nolen(key); \
+		int   kl = SvCUR(key); \
+		if( exists = hv_fetch(collect, kv, kl, 0) ) { \
+			sv_catpvn(*exists, data,length);\
+			\
+		} else { \
+			SV *sv = newSVpvn(data, length); \
+			hv_store(collect, kv, kl, sv, 0); \
+		} \
+	} STMT_END
+
 void on_comment(char * data,unsigned int length) {
 	SV *sv   = newSVpvn(data, length);
 	SV **key = hv_fetch(NAMES, "comm", 4, 0);
+	SV **exists;
 	if (key && SvOK(*key)) {
-		if (order) {
-			HV *hv = newHV();
-			SV *href = newRV_noinc( (SV *) hv );
-			hv_store(collect, SvPV_nolen(*key), SvCUR(*key), sv, 0);
-			av_push( ordered, href );
-		} else {
-			hv_store(collect, SvPV_nolen(*key), SvCUR(*key), sv, 0);
-		}
+		hv_store_a(collect, *key, sv );
 	} else {
-		printf("Ignore comment\n");
+		printf("Ignore Comment\n");
 	}
 }
 
 void on_cdata(char * data,unsigned int length) {
 	SV *sv   = newSVpvn(data, length);
-	SV **key = hv_fetch(NAMES, "cdata", 5, 0);
-	if (key && SvOK(*key)) {
-		hv_store(collect, SvPV_nolen(*key), SvCUR(*key), sv, 0);
-	} else {
+	SV **key;
+	if ((key = hv_fetch(NAMES, "cdata", 5, 0)) && SvOK(*key)) {
+		//hv_store_cat(collect, *key, data, length);
+		hv_store_a(collect, *key, sv );
+	} else
+	if ((key = hv_fetch(NAMES, "text", 4, 0)) && SvOK(*key)) {
+		//hv_store_cat(collect, *key, data, length);
+		hv_store_a(collect, *key, sv );
+	} else
+	{
 		printf("Ignore CDATA\n");
 	}
 }
 
-void on_text(char * data,unsigned int length) {
-	SV *sv;
+void on_wsp(char * data,unsigned int length) {
+	SV *sv   = newSVpvn(data, length);
+	//printf("Got WSP '%s'\n",SvPV_nolen(sv));
 	SV **key = hv_fetch(NAMES, "text", 4, 0);
 	SV **pval;
 	if (key && SvOK(*key)) {
-		pval = hv_fetch(collect, SvPV_nolen(*key), SvCUR(*key), 0);
-		if (pval) {
-			sv_catpvn(*pval, data,length);
-		} else {
-			sv = newSVpvn(data, length);
-			hv_store(collect, SvPV_nolen(*key), SvCUR(*key), sv, 0);
-		}
+		//hv_store_cat(collect, *key, data, length);
+		hv_store_a(collect, *key, sv );
+	} else {
+		printf("Ignore WSP\n");
+	}
+}
+
+void on_text(char * data,unsigned int length) {
+	SV *sv   = newSVpvn(data, length);
+	//printf("Got text '%s'\n",SvPV_nolen(sv));
+	SV **key = hv_fetch(NAMES, "text", 4, 0);
+	SV **pval;
+	if (key && SvOK(*key)) {
+		//hv_store_cat(collect, *key, data, length);
+		hv_store_a(collect, *key, sv );
 	} else {
 		printf("Ignore TEXT\n");
 	}
@@ -90,6 +135,52 @@ void on_tag_open(char * data, unsigned int length) {
 void on_tag_close(char * data, unsigned int length) {
 	SV *sv   = newSVpvn(data, length);
 	// TODO: check node name
+	
+	// Text joining
+	SV **text;
+	SV **key;
+	if ((key = hv_fetch(NAMES, "text", 4, 0)) && SvOK(*key)) {
+		if ((text = hv_fetch(collect, SvPV_nolen(*key), SvCUR(*key), 0)) && SvOK(*text)) {
+			if (SvTYPE( SvRV(*text) ) == SVt_PVAV) {
+				AV *av = (AV *) SvRV( *text );
+				SV *svtext = newSV(0);
+				SV **join;// = newSVpvn("+",1);
+				SV **val;
+				I32 len = 0, avlen = av_len(av);
+				if ((join = hv_fetch(NAMES, "join", 4, 0)) && SvOK(*join)) {
+					if (SvCUR(*join)) {
+						//printf("Join length = %d\n",SvCUR(*join));
+						for ( len = 0; len < avlen; len++ ) {
+							if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
+								if(len > 0) { sv_catsv(svtext,*join); }
+								sv_catsv(svtext,*val);
+							}
+						}
+					} else {
+						//printf("Optimized join loop\n");
+						for ( len = 0; len < avlen; len++ ) {
+							if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
+								sv_catsv(svtext,*val);
+							}
+						}
+					}
+					//printf("Joined: %s\n",SvPV_nolen(svtext));
+					hv_store(collect, SvPV_nolen(*key), SvCUR(*key), svtext, 0);
+				}
+				else
+				if ( avlen == 1 ) {
+					val = av_fetch(av,0,0);
+					if (val && SvOK(*val)) {
+						sv_catsv(svtext,*val);
+					}
+					hv_store(collect, SvPV_nolen(*key), SvCUR(*key), svtext, 0);
+				}
+			}
+			
+		}
+	}
+	// Text joining
+	
 	if (node_depth > -1) {
 		collect = node_chain[node_depth];
 		node_depth--;
@@ -127,7 +218,6 @@ void on_attr_val_part(char * data,unsigned int length) {
 }
 
 void on_attr_val(char * data,unsigned int length) {
-	SV **exists;
 	if(!attrname) {
 		croak("Got attrval without attrname\n");
 	}
@@ -136,27 +226,7 @@ void on_attr_val(char * data,unsigned int length) {
 	} else {
 		attrval = newSVpvn(data, length);
 	}
-	char *key = SvPV_nolen(attrname);
-	int len = SvCUR(attrname);
-	if (exists = hv_fetch( collect, key, len, 0 )) {
-		if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) {
-			// Already an array
-			AV *av = (AV *) SvRV( *exists );
-			av_push( av, attrval );
-		} else {
-			AV *ary  = newAV();
-			SV *aref = newRV_noinc( (SV *) ary );
-			SV *old  = newSV(0);
-			sv_copypv(old,*exists);
-			//printf("old val = %s\n",SvPV_nolen( old ));
-			
-			av_push( ary, old );
-			av_push( ary, attrval );
-			hv_store( collect, key, len, aref, 0 );
-		}
-	} else {
-		hv_store(collect, key, len, attrval, 0);
-	}
+	hv_store_a(collect, attrname, attrval);
 	attrname = 0;
 	attrval = 0;
 }
@@ -179,25 +249,29 @@ _xml2hash(xml,conf)
 		hv_store(NAMES, "comm",  4, newSVpvn("//",2), 0 );
 		*/
 		order = 0;//hv_fetch(NAMES,"order",5,0);
+		xml_callbacks cbs;
+		memset(&cbs,0,sizeof(xml_callbacks));
 		if (order) {
-			ordered = newAV();
-			RETVAL = newRV_noinc( (SV *) ordered );
+			croak("Ordered mode not implemented yet\n");
 		} else{
 			collect = newHV();
 			RETVAL = newRV_noinc( (SV *) collect );
+			cbs.comment      = on_comment;
+			cbs.cdata        = on_cdata;
+			cbs.tagopen      = on_tag_open;
+			cbs.tagclose     = on_tag_close;
+			cbs.attrname     = on_attr_name;
+			cbs.attrvalpart  = on_attr_val_part;
+			cbs.attrval      = on_attr_val;
+			cbs.text         = on_text;
+			SV **trim;
+			if ((trim = hv_fetch(NAMES, "trim", 4, 0)) && SvTRUE(*trim)) {
+				printf("Have trim option\n");
+			} else {
+				printf("Have no trim option\n");
+				cbs.wsp          = on_wsp;
+			}
 		}
-		
-		
-		xml_callbacks cbs;
-		memset(&cbs,0,sizeof(xml_callbacks));
-		cbs.comment      = on_comment;
-		cbs.cdata        = on_cdata;
-		cbs.tagopen      = on_tag_open;
-		cbs.tagclose     = on_tag_close;
-		cbs.attrname     = on_attr_name;
-		cbs.attrvalpart  = on_attr_val_part;
-		cbs.attrval      = on_attr_val;
-		cbs.text         = on_text;
 		
 		node_depth = -1;
 		
