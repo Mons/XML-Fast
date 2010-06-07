@@ -117,7 +117,6 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	I32 keys = HvKEYS(ctx->hcurrent);
 	SV  *svtext = 0;
 	if (ctx->text) {
-		printf("Hash=%s | %d\n",SvPV_nolen( hv_scalar(ctx->hcurrent) ), keys);
 		
 		//unsigned char count;
 		//hv_iterinit(ctx->hcurrent);
@@ -229,6 +228,15 @@ void on_attr_val(void * pctx, char * data,unsigned int length) {
 	ctx->attrval = 0;
 }
 
+void on_warn(char * format, ...) {
+	Perl_warn(aTHX_ "Got warn: %s",format);
+	va_list va;
+	char buffer[1024];
+	// TODO (segfault)
+	//vsnprintf(buffer,1023,format,va);
+	//Perl_warn(aTHX_ "%s",buffer);
+}
+
 MODULE = XML::Fast		PACKAGE = XML::Fast
 
 SV*
@@ -290,6 +298,7 @@ _xml2hash(xml,conf)
 			cbs.attrname     = on_attr_name;
 			cbs.attrvalpart  = on_attr_val_part;
 			cbs.attrval      = on_attr_val;
+			cbs.warn         = on_warn;
 			
 			if(ctx.comm)
 				cbs.comment      = on_comment;

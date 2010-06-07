@@ -394,8 +394,10 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 									}
 								}
 								if (seek) {
-									printf("# Found no open node until root for '%s'. open and close\n",buffer);
-									print_chain(root, curr_depth);
+									if (cb->warn)
+										cb->warn("# Found no open node until root for '%s'. open and close\n",buffer);
+									//printf("# Found no open node until root for '%s'. open and close\n",buffer);
+									//print_chain(root, curr_depth);
 								} else {
 									// TODO
 								}
@@ -522,7 +524,7 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 							break;
 						default:
 							if ( textstate == TEXT_INITWSP && p > at ) {
-								printf("Got initial whitespace\n");
+								//printf("Got initial whitespace\n");
 								if (cb->wsp) cb->wsp(ctx, at, p - at );
 								at = p;
 							}

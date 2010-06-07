@@ -42,6 +42,8 @@ typedef struct {
 	void (*attrval)(void *,char *, unsigned int);
 	void (*tagclose)(void *,char *, unsigned int);
 	void (*wsp)(void *,char *, unsigned int);
+	void (*warn)(char *, ...);
+	void (*die)(char *, ...);
 } xml_callbacks;
 
 struct entityref{
