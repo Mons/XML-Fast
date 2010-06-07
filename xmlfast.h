@@ -6,6 +6,13 @@
 #include <string.h>
 #include <strings.h>
 
+#ifndef safemalloc
+#define safemalloc malloc
+#endif
+#ifndef safefree
+#define safefree free
+#endif
+
 
 #define PROCESSING_INSTRUCTION 0x0001
 #define TEXT_NODE              0x0002

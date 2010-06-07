@@ -32,6 +32,12 @@ typedef struct {
 	
 } parsestate;
 
+
+#define newRVHV() newRV_noinc((SV *)newHV())
+
+#define rv_hv_store(rv,key,len,sv,f) hv_store((HV*)SvRV(rv), key,len,sv,f)
+#define rv_hv_fetch(rv,key,len,f) hv_fetch((HV*)SvRV(rv), key,len,f)
+
 #define hv_store_a( hv, key, sv ) \
 	STMT_START { \
 		SV **exists; \
@@ -40,6 +46,7 @@ typedef struct {
 		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
 			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
 				AV *av = (AV *) SvRV( *exists ); \
+				/* printf("push '%s' to array in key '%s'\n", SvPV_nolen(old), kv); */ \
 				av_push( av, sv ); \
 			} else { \
 				AV *av   = newAV(); \
@@ -83,8 +90,8 @@ void on_cdata(void * pctx, char * data,unsigned int length) {
 void on_text(void * pctx, char * data,unsigned int length) {
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
-	//printf("Got text '%s'\n",SvPV_nolen(sv));
-	hv_store_a(ctx->hcurrent, ctx->text, sv );
+	printf("Got text for '%s'\n",SvPV_nolen(sv));
+	hv_store_a( ctx->hcurrent, ctx->text, sv );
 }
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
@@ -94,12 +101,12 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 	//hv_store(ctx->hcurrent, data, length, sv, 0);
 	ctx->depth++;
 	if (ctx->depth >= ctx->chainsize) {
-		Perl_warn(aTHX_ "XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
+		Perl_warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
 		HV ** keep = ctx->hchain;
-		ctx->hchain = malloc( sizeof(ctx->hcurrent) * ctx->chainsize * 2);
+		ctx->hchain = safemalloc( sizeof(ctx->hcurrent) * ctx->chainsize * 2);
 		memcpy(ctx->hchain, keep, sizeof(ctx->hcurrent) * ctx->chainsize * 2);
 		ctx->chainsize *= 2;
-		free(keep);
+		safefree(keep);
 	}
 
 	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
@@ -126,14 +133,16 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 				AV *av = (AV *) SvRV( *text );
 				SV **join;// = newSVpvn("+",1);
 				SV **val;
-				I32 len = 0, avlen = av_len(av);
+				I32 len = 0, avlen = av_len(av) + 1;
 				if (ctx->join) {
-					svtext = newSV(0);
+					svtext = newSVpvn("",0);
 					if (SvCUR(ctx->join)) {
-						//printf("Join length = %d\n",SvCUR(*join));
+						//printf("Join length = %d, avlen=%d\n",SvCUR(*join),avlen);
 						for ( len = 0; len < avlen; len++ ) {
 							if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
+								//printf("Join %s with '%s'\n",SvPV_nolen(*val), SvPV_nolen(ctx->join));
 								if(len > 0) { sv_catsv(svtext,ctx->join); }
+								//printf("Join %s with '%s'\n",SvPV_nolen(*val), SvPV_nolen(ctx->join));
 								sv_catsv(svtext,*val);
 							}
 						}
@@ -141,6 +150,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 						//printf("Optimized join loop\n");
 						for ( len = 0; len < avlen; len++ ) {
 							if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
+								//printf("Join %s with ''\n",SvPV_nolen(*val));
 								sv_catsv(svtext,*val);
 							}
 						}
@@ -150,7 +160,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 				}
 				else
 				if ( avlen == 1 ) {
-					svtext = newSV(0);
+					svtext = newSVpvn("",0);
 					val = av_fetch(av,0,0);
 					if (val && SvOK(*val)) {
 						sv_catsv(svtext,*val);
@@ -174,7 +184,21 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
 		ctx->depth--;
 		if (keys == 1 && svtext) {
-			//printf("%s have only text node='%s'\n", SvPV_nolen(sv), SvPV_nolen(svtext));
+			printf("Hash for destruction have refcnt = %d\n",SvREFCNT(hv));
+			/*
+			SV **ex = hv_fetch(ctx->hcurrent, data, length, 0);
+			if (ex && SvOK(*ex)) {
+				printf("Old sv='%d'\n",SvPV_nolen(*ex) );
+			}
+			*/
+			// This leak SV = PVHV
+			/*
+			if ((text = hv_fetch(ctx->hcurrent, data, length, 0)) && SvOK(*text)) {
+				printf("Have stored key %s\n",SvPV_nolen(*text));
+			}
+			*/
+			//SV *kill = newRV_noinc( (SV *) hv);
+			//sv_2mortal(kill);
 			hv_store(ctx->hcurrent, data, length, svtext, 0);
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
@@ -224,20 +248,41 @@ void on_attr_val(void * pctx, char * data,unsigned int length) {
 		ctx->attrval = newSVpvn(data, length);
 	}
 	hv_store_a(ctx->hcurrent, ctx->attrname, ctx->attrval);
+	sv_2mortal(ctx->attrname);
+	//sv_2mortal(ctx->attrval);
 	ctx->attrname = 0;
 	ctx->attrval = 0;
 }
 
 void on_warn(char * format, ...) {
-	Perl_warn(aTHX_ "Got warn: %s",format);
+	/*
+		my_vsnprintf
+		The C library vsnprintf if available and standards-compliant.
+		However, if if the vsnprintf is not available, will unfortunately use the unsafe
+		vsprintf which can overrun the buffer (there is an overrun check, but that may
+		be too late). Consider using sv_vcatpvf instead, or getting vsnprintf.
+	*/
 	va_list va;
+	va_start(va,format);
 	char buffer[1024];
 	// TODO (segfault)
-	//vsnprintf(buffer,1023,format,va);
-	//Perl_warn(aTHX_ "%s",buffer);
+	vsnprintf(buffer,1023,format,va);
+	Perl_warn(aTHX_ "%s",buffer);
+	va_end(va);
 }
 
 MODULE = XML::Fast		PACKAGE = XML::Fast
+
+void
+_test()
+	CODE:
+		SV *sv = newRVHV();
+		sv_2mortal(sv);
+		SV *test = newSVpvn("test",4);
+		rv_hv_store(sv, "test",4,test,0);
+		SV **fetch = rv_hv_fetch(sv,"test",4,0);
+		printf("Fetched: %s\n",SvPV_nolen(*fetch));
+	
 
 SV*
 _xml2hash(xml,conf)
@@ -257,19 +302,19 @@ _xml2hash(xml,conf)
 			ctx.trim = 1;
 		}
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.attr = newSV(0),*key);
+			sv_copypv(ctx.attr = sv_newmortal(),*key);
 		}
 		if ((key = hv_fetch(conf, "text", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.text = newSV(0),*key);
+			sv_copypv(ctx.text = sv_newmortal(),*key);
 		}
 		if ((key = hv_fetch(conf, "join", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.join = newSV(0),*key);
+			sv_copypv(ctx.join = sv_newmortal(),*key);
 		}
 		if ((key = hv_fetch(conf, "cdata", 5, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.cdata = newSV(0),*key);
+			sv_copypv(ctx.cdata = sv_newmortal(),*key);
 		}
 		if ((key = hv_fetch(conf, "comm", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.comm = newSV(0),*key);
+			sv_copypv(ctx.comm = sv_newmortal(),*key);
 		}
 		
 		if ((key = hv_fetch(conf, "_max_depth", 10, 0)) && SvOK(*key)) {
@@ -289,7 +334,7 @@ _xml2hash(xml,conf)
 		} else{
 			ctx.hcurrent = newHV();
 			
-			ctx.hchain = malloc( sizeof(ctx.hcurrent) * ctx.chainsize);
+			ctx.hchain = safemalloc( sizeof(ctx.hcurrent) * ctx.chainsize);
 			ctx.depth = -1;
 			
 			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
@@ -314,11 +359,8 @@ _xml2hash(xml,conf)
 			if (!ctx.trim)
 				cbs.wsp          = on_text;
 		}
-		
 		parse(xml,&ctx,&cbs);
-		
-		free(ctx.hchain);
-		
+		safefree(ctx.hchain);
 	OUTPUT:
 		RETVAL
 
