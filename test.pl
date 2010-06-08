@@ -13,15 +13,7 @@ my $handle;
 #Devel::Leak::CheckSV($handle);
 #exit;
 
-if (1){
-say dumper(
-	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text</test>"),
-);
-say dumper(
-	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text&amp;text</test>",join=>undef),
-);
-say dumper +
-my $xml = XML::Fast::xml2hash("<?xml version=\"1.0\"?>".
+my $bigxml = "<?xml version=\"1.0\"?>".
 			"<test1 a='1&amp;234-5678-9012-3456-7890'>".
 				"<testi x='x' x='y' x = 'z' />".
 				"<testz x='a' x='b>' x='c' / >".
@@ -33,13 +25,23 @@ my $xml = XML::Fast::xml2hash("<?xml version=\"1.0\"?>".
 						"<!-- comment3 -->".
 						"<![CDATA[cda]]>".
 						"ok1&amp;ok2&gttest".
-						"<i>test<b>test</i>test</b>".
+						"<i>itest<b>btest</i>ibtest</b>".
 						"iiiiii   ".
 					"</test3>".
 				"</test2>".
 				"<wsp>  abc  </wsp>".
 				"<multy>abc&ampxyz</multy>".
-			"</test1 >\n", trim => 1, cdata => undef, join => '');
+			"</test1 >\n";
+
+if (1){
+say dumper(
+	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text</test>"),
+);
+say dumper(
+	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text&amp;text</test>",join=>undef),
+);
+say dumper +
+my $xml = XML::Fast::xml2hash($bigxml);
 #exit;
 }
 
@@ -60,25 +62,7 @@ Devel::Leak::NoteSV($handle);
 
 for (1..5) {
 #=for rem
-	XML::Fast::xml2hash("<?xml version=\"1.0\"?>".
-			"<test1 a='1&amp;234-5678-9012-3456-7890'>".
-				"<testi x='x' x='y' x = 'z' />".
-				"<testz x='a' x='b>' x='c' / >".
-				"<test2>".
-					"<test3>".
-						"some text".
-						"<!-- comment1 -->".
-						"<!-- comment2 -->".
-						"<!-- comment3 -->".
-						"<![CDATA[cda]]>".
-						"ok1&amp;ok2&gttest".
-						"<i>test<b>test</i>test</b>".
-						"iiiiii   ".
-					"</test3>".
-				"</test2>".
-				"<wsp>  abc  </wsp>".
-				"<multy>abc&ampxyz</multy>".
-			"</test1 >\n");
+	XML::Fast::xml2hash($bigxml);
 #=cut
 }
 

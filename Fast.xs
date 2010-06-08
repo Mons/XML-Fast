@@ -170,10 +170,8 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 					svtext = newRV( (SV *) av );
 				}
 			} else {
-				//svtext = *text;
-				//SvREFCNT_inc(svtext);
-				svtext = newSV(0);
-				sv_copypv(svtext,*text);
+				svtext = *text;
+				SvREFCNT_inc(svtext);
 			}
 		}
 	}
