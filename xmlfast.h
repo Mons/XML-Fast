@@ -12,6 +12,9 @@
 #ifndef safefree
 #define safefree free
 #endif
+#ifndef saferealloc
+#define saferealloc realloc
+#endif
 
 
 #define PROCESSING_INSTRUCTION 0x0001

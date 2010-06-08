@@ -13,8 +13,8 @@
 
 typedef struct {
 	// config
-	unsigned char order;
-	unsigned char trim;
+	unsigned int order;
+	unsigned int trim;
 	SV  * attr;
 	SV  * text;
 	SV  * join;
@@ -32,11 +32,6 @@ typedef struct {
 	
 } parsestate;
 
-
-#define newRVHV() newRV_noinc((SV *)newHV())
-
-#define rv_hv_store(rv,key,len,sv,f) hv_store((HV*)SvRV(rv), key,len,sv,f)
-#define rv_hv_fetch(rv,key,len,f) hv_fetch((HV*)SvRV(rv), key,len,f)
 
 #define hv_store_a( hv, key, sv ) \
 	STMT_START { \
@@ -90,7 +85,7 @@ void on_cdata(void * pctx, char * data,unsigned int length) {
 void on_text(void * pctx, char * data,unsigned int length) {
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
-	printf("Got text for '%s'\n",SvPV_nolen(sv));
+	//printf("Got text for '%s'\n",SvPV_nolen(sv));
 	hv_store_a( ctx->hcurrent, ctx->text, sv );
 }
 
@@ -108,7 +103,6 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 		ctx->chainsize *= 2;
 		safefree(keep);
 	}
-
 	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
 	//node_depth++;
 	//node_chain[node_depth] = collect;
@@ -131,7 +125,6 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
 			if (SvTYPE( SvRV(*text) ) == SVt_PVAV) {
 				AV *av = (AV *) SvRV( *text );
-				SV **join;// = newSVpvn("+",1);
 				SV **val;
 				I32 len = 0, avlen = av_len(av) + 1;
 				if (ctx->join) {
@@ -155,7 +148,8 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 							}
 						}
 					}
-					//printf("Joined: %s\n",SvPV_nolen(svtext));
+					//printf("Joined: to %s => '%s'\n",SvPV_nolen(ctx->text),SvPV_nolen(svtext));
+					SvREFCNT_inc(svtext);
 					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
 				else
@@ -163,47 +157,45 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 					svtext = newSVpvn("",0);
 					val = av_fetch(av,0,0);
 					if (val && SvOK(*val)) {
+						//svtext = *val;
+						//SvREFCNT_inc(svtext);
 						sv_catsv(svtext,*val);
 					}
+					SvREFCNT_inc(svtext);
 					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
 				else
 				{
 					// Remebmer for use if it is single
-					svtext = newRV_noinc( (SV *) av );
+					svtext = newRV( (SV *) av );
 				}
 			} else {
-				svtext = *text;
+				//svtext = *text;
+				//SvREFCNT_inc(svtext);
+				svtext = newSV(0);
+				sv_copypv(svtext,*text);
 			}
 		}
 	}
+	//printf("svtext=(0x%lx) '%s'\n", svtext, svtext ? SvPV_nolen(svtext) : "");
 	// Text joining
-	
 	if (ctx->depth > -1) {
 		HV *hv = ctx->hcurrent;
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
+		ctx->hchain[ ctx->depth ];// = (HV *)NULL;
 		ctx->depth--;
 		if (keys == 1 && svtext) {
-			printf("Hash for destruction have refcnt = %d\n",SvREFCNT(hv));
-			/*
-			SV **ex = hv_fetch(ctx->hcurrent, data, length, 0);
-			if (ex && SvOK(*ex)) {
-				printf("Old sv='%d'\n",SvPV_nolen(*ex) );
-			}
-			*/
-			// This leak SV = PVHV
-			/*
-			if ((text = hv_fetch(ctx->hcurrent, data, length, 0)) && SvOK(*text)) {
-				printf("Have stored key %s\n",SvPV_nolen(*text));
-			}
-			*/
-			//SV *kill = newRV_noinc( (SV *) hv);
-			//sv_2mortal(kill);
+			//SV *sx   = newSVpvn(data, length);sv_2mortal(sx);
+			//printf("Hash in tag '%s' for destruction have refcnt = %d (%lx | %lx)\n",SvPV_nolen(sx),SvREFCNT(hv), hv, ctx->hcurrent);
+			SvREFCNT_dec(hv);
+			SvREFCNT_inc(svtext);
 			hv_store(ctx->hcurrent, data, length, svtext, 0);
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
+			//printf("Store hash into RV '%lx'\n",sv);
 			hv_store(ctx->hcurrent, data, length, sv, 0);
 		}
+		if (svtext) SvREFCNT_dec(svtext);
 	} else {
 		SV *sv   = newSVpvn(data, length);
 		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(sv));
@@ -271,18 +263,26 @@ void on_warn(char * format, ...) {
 	va_end(va);
 }
 
-MODULE = XML::Fast		PACKAGE = XML::Fast
-
+/*
+#define newRVHV() newRV_noinc((SV *)newHV())
+#define rv_hv_store(rv,key,len,sv,f) hv_store((HV*)SvRV(rv), key,len,sv,f)
+#define rv_hv_fetch(rv,key,len,f) hv_fetch((HV*)SvRV(rv), key,len,f)
+*/
+/*
 void
 _test()
 	CODE:
-		SV *sv = newRVHV();
-		sv_2mortal(sv);
+		SV *sv1 = newRVHV();
+		SV *sv2 = newRVHV();
+		sv_2mortal(sv1);
+		sv_2mortal(sv2);
 		SV *test = newSVpvn("test",4);
-		rv_hv_store(sv, "test",4,test,0);
-		SV **fetch = rv_hv_fetch(sv,"test",4,0);
-		printf("Fetched: %s\n",SvPV_nolen(*fetch));
-	
+		rv_hv_store(sv1, "test",4,test,0);
+		SvREFCNT_inc(test);
+		rv_hv_store(sv2, "test",4,test,0);
+*/
+
+MODULE = XML::Fast		PACKAGE = XML::Fast
 
 SV*
 _xml2hash(xml,conf)
@@ -329,6 +329,9 @@ _xml2hash(xml,conf)
 		
 		xml_callbacks cbs;
 		memset(&cbs,0,sizeof(xml_callbacks));
+		//ctx.trash = newRV_noinc( (SV *)newAV() );
+		//sv_2mortal(ctx.trash);
+		
 		if (ctx.order) {
 			croak("Ordered mode not implemented yet\n");
 		} else{
