@@ -149,8 +149,10 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 						}
 					}
 					//printf("Joined: to %s => '%s'\n",SvPV_nolen(ctx->text),SvPV_nolen(svtext));
-					SvREFCNT_inc(svtext);
-					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
+					//SvREFCNT_inc(svtext);
+					if (keys != 1) {
+						hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
+					}
 				}
 				else
 				if ( avlen == 1 ) {
@@ -161,8 +163,10 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 						//SvREFCNT_inc(svtext);
 						sv_catsv(svtext,*val);
 					}
-					SvREFCNT_inc(svtext);
-					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
+					//SvREFCNT_inc(svtext);
+					if (keys != 1) {
+						hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
+					}
 				}
 				else
 				{
@@ -188,14 +192,14 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			//SV *sx   = newSVpvn(data, length);sv_2mortal(sx);
 			//printf("Hash in tag '%s' for destruction have refcnt = %d (%lx | %lx)\n",SvPV_nolen(sx),SvREFCNT(hv), hv, ctx->hcurrent);
 			SvREFCNT_dec(hv);
-			SvREFCNT_inc(svtext);
+			//SvREFCNT_inc(svtext);
 			hv_store(ctx->hcurrent, data, length, svtext, 0);
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
 			//printf("Store hash into RV '%lx'\n",sv);
 			hv_store(ctx->hcurrent, data, length, sv, 0);
 		}
-		if (svtext) SvREFCNT_dec(svtext);
+		//if (svtext) SvREFCNT_dec(svtext);
 	} else {
 		SV *sv   = newSVpvn(data, length);
 		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(sv));
