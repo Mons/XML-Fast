@@ -25,7 +25,7 @@ my $bigxml = "<?xml version=\"1.0\"?>".
 						"<!-- comment3 -->".
 						"<![CDATA[cda]]>".
 						"ok1&amp;ok2&gttest".
-						"<i>itest<b>btest</i>ibtest</b>".
+						"<i>itest<s>istest<b>isbtest</i>sbtest</b>stest2</s>".
 						"iiiiii   ".
 					"</test3>".
 				"</test2>".
@@ -42,7 +42,7 @@ say dumper(
 );
 say dumper +
 my $xml = XML::Fast::xml2hash($bigxml);
-#exit;
+exit if $ARGV[0] eq 'dump';
 }
 
 =for rem

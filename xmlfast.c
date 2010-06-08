@@ -377,26 +377,38 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 									snprintf(buffer,len+1,"%s",at);
 								}
 								//printf("NODE CLOSE '%s' (unbalanced)\n",buffer);
-								seek = chain;
+								reverse = seek = chain;
 								while( seek > root ) {
 									seek--;
 									if (strncmp(seek->name, at, len) == 0) {
-										//printf("Found early opened node %s\n",seek->name);
+										printf("Found early opened node %s\n",seek->name);
+										print_chain(root, curr_depth);
 										while(chain >= seek) {
 											//printf("Auto close %s\n",chain->name);
 											if(cb->tagclose) cb->tagclose(ctx, chain->name, chain->len);
+											safefree(chain->name);
 											chain--;
 											curr_depth--;
 											//print_chain(root, curr_depth);
 										}
+										/*
+										//optional feature: auto-opening tags
+										for (seek = chain+2; seek <= reverse; seek++) {
+											//printf("Auto open %s\n",seek->name);
+											chain++;
+											curr_depth++;
+											*chain = *(chain+1);
+											if(cb->tagopen) cb->tagopen(ctx, chain->name, chain->len);
+											//print_chain(root, curr_depth);
+										}
+										*/
 										seek = 0;
 										break;
 									}
 								}
 								if (seek) {
 									if (cb->warn)
-										cb->warn("Found no open node until root for '%s'. open and close",buffer);
-									//printf("# Found no open node until root for '%s'. open and close\n",buffer);
+										cb->warn("Found no open node until root for '%s'. Ignored",buffer);
 									//print_chain(root, curr_depth);
 								} else {
 									// TODO
