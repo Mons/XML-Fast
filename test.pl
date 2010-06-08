@@ -63,6 +63,8 @@ Devel::Leak::NoteSV($handle);
 for (1..5) {
 #=for rem
 	XML::Fast::xml2hash($bigxml);
+	XML::Fast::xml2hash($bigxml, join => undef);
+	XML::Fast::xml2hash($bigxml, join => '');
 #=cut
 }
 

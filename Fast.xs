@@ -118,10 +118,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	I32 keys = HvKEYS(ctx->hcurrent);
 	SV  *svtext = 0;
 	if (ctx->text) {
-		
-		//unsigned char count;
-		//hv_iterinit(ctx->hcurrent);
-		
+		// we may have stored text node
 		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
 			if (SvTYPE( SvRV(*text) ) == SVt_PVAV) {
 				AV *av = (AV *) SvRV( *text );
@@ -153,20 +150,29 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
 				else
-				if ( avlen == 1 ) {
-					svtext = newSVpvn("",0);
-					val = av_fetch(av,0,0);
-					if (val && SvOK(*val)) {
-						//svtext = *val;
-						//SvREFCNT_inc(svtext);
-						sv_catsv(svtext,*val);
-					}
-					SvREFCNT_inc(svtext);
-					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
-				}
-				else
+				// currently unreachable, since if we have single element, it is stored as SV value, not AV
+				//if ( avlen == 1 ) {
+				//	Perl_warn("# AVlen=1\n");
+				//	/* works
+				//	svtext = newSVpvn("",0);
+				//	val = av_fetch(av,0,0);
+				//	if (val && SvOK(*val)) {
+				//		//svtext = *val;
+				//		//SvREFCNT_inc(svtext);
+				//		sv_catsv(svtext,*val);
+				//	}
+				//	*/
+				//	val = av_fetch(av,0,0);
+				//	if (val) {
+				//		svtext = *val;
+				//		SvREFCNT_inc(svtext);
+				//		hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
+				//	}
+				//}
+				//else
 				{
 					// Remebmer for use if it is single
+					Perl_warn("# No join\n");
 					svtext = newRV( (SV *) av );
 				}
 			} else {
@@ -185,8 +191,8 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		if (keys == 1 && svtext) {
 			//SV *sx   = newSVpvn(data, length);sv_2mortal(sx);
 			//printf("Hash in tag '%s' for destruction have refcnt = %d (%lx | %lx)\n",SvPV_nolen(sx),SvREFCNT(hv), hv, ctx->hcurrent);
-			SvREFCNT_dec(hv);
 			SvREFCNT_inc(svtext);
+			SvREFCNT_dec(hv);
 			hv_store(ctx->hcurrent, data, length, svtext, 0);
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
