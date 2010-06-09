@@ -17,6 +17,7 @@ my $bigxml = "<?xml version=\"1.0\"?>".
 			"<test1 a='1&amp;234-5678-9012-3456-7890'>".
 				"<testi x='x' x='y' x = 'z' />".
 				"<testz x='a' x='b>' x='c' / >".
+				"<repeated><node>node1</node><node>node2</node></repeated>".
 				"<test2>".
 					"<test3>".
 						"some text".

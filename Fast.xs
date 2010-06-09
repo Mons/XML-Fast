@@ -183,6 +183,8 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	}
 	//printf("svtext=(0x%lx) '%s'\n", svtext, svtext ? SvPV_nolen(svtext) : "");
 	// Text joining
+	SV *tag = newSVpvn(data,length);
+	sv_2mortal(tag);
 	if (ctx->depth > -1) {
 		HV *hv = ctx->hcurrent;
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
@@ -193,11 +195,13 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			//printf("Hash in tag '%s' for destruction have refcnt = %d (%lx | %lx)\n",SvPV_nolen(sx),SvREFCNT(hv), hv, ctx->hcurrent);
 			SvREFCNT_inc(svtext);
 			SvREFCNT_dec(hv);
-			hv_store(ctx->hcurrent, data, length, svtext, 0);
+			//hv_store(ctx->hcurrent, data, length, svtext, 0);
+			hv_store_a(ctx->hcurrent, tag, svtext);
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
 			//printf("Store hash into RV '%lx'\n",sv);
-			hv_store(ctx->hcurrent, data, length, sv, 0);
+			//hv_store(ctx->hcurrent, data, length, sv, 0);
+			hv_store_a(ctx->hcurrent, tag, sv);
 		}
 		if (svtext) SvREFCNT_dec(svtext);
 	} else {
@@ -213,9 +217,13 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 	}
 	SV **key;
 	if( ctx->attr ) {
+		/*
+		Refactor
+		*/
 		ctx->attrname = newSV(0);
 		sv_copypv(ctx->attrname,ctx->attr);
 		sv_catpvn(ctx->attrname, data, length);
+		//ctx->attrname = newSVpnv(ctx->attrv,ctx->attrl);
 	} else {
 		ctx->attrname = newSVpvn(data, length);
 	}
@@ -306,7 +314,10 @@ _xml2hash(xml,conf)
 			ctx.trim = 1;
 		}
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.attr = sv_newmortal(),*key);
+			//sv_copypv(ctx.attr = sv_newmortal(),*key);
+			ctx.attr = *key;
+			//ctx.attrv = SvPV_nolen(*key);
+			//ctx.attrl = SvCUR(*key);
 		}
 		if ((key = hv_fetch(conf, "text", 4, 0)) && SvPOK(*key)) {
 			sv_copypv(ctx.text = sv_newmortal(),*key);
