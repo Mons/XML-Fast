@@ -7,17 +7,46 @@ use ExtUtils::testlib;
 use XML::Fast;
 use Devel::Leak;
 my $handle;
+my $data;
 #XML::Fast::xml2hash('<!-- test -->');
 #__END__
 #Devel::Leak::NoteSV( $handle);
 #XML::Fast::_test();
 #Devel::Leak::CheckSV($handle);
 #exit;
+my $xml1 = q{
+	<root at="key">
+		<!-- test -->
+		<nest>
+			<![CDATA[first]]>
+			<v>a</v>
+			mid
+			<v at="a">b</v>
+			<vv></vv>
+			last
+		</nest>
+	</root>
+};
+my $xml2 = q{
+	<root at="key">
+		<nest>
+			first &amp; mid &amp; last
+		</nest>
+	</root>
+};
+my $xml3 = q{
+	<root at="key">
+		<nest>
+			first &amp; <v>x</v> &amp; last
+		</nest>
+	</root>
+};
 my $bigxml;
 {
 no utf8;
 $bigxml = "<?xml version=\"1.0\"?>".
 			"<test1 a='1&amp;234-5678-9012-3456-7890'>".
+				"<empty />".
 				"<testi x='x' x='y' x = 'z' />".
 				"<testz x='a' x='b>' x='c' / >".
 				"<repeated><node>node1</node><node>node2</node><node>node3</node></repeated>".
@@ -45,9 +74,11 @@ say dumper(
 say dumper(
 	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text&amp;text</test>",join=>undef),
 );
-#say dumper +
+say dumper(
+	XML::Fast::xml2hash($xml3, join => undef)
+);
 say Data::Dumper::Dumper +
-my $xml = XML::Fast::xml2hash($bigxml);
+my $xml = XML::Fast::xml2hash($bigxml, cdata => '#', comm => '//');
 exit if $ARGV[0] eq 'dump';
 }
 
@@ -86,9 +117,10 @@ XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => 1);
 use Test::More qw(no_plan);
 
 is_deeply
-	XML::Fast::xml2hash($bigxml),
+	XML::Fast::xml2hash($bigxml, cdata => '#', comm => '//'),
 {
           'test1' => {
+                       'empty' => '',
                        'repeated' => {
                                        'node' => [
                                                    'node1',
@@ -150,3 +182,75 @@ is_deeply
                      }
         }
 , 'big test';
+is_deeply
+	$data = xml2hash($xml2, join => '+'),
+	{root => {'-at' => 'key',nest => 'first & mid & last'}},
+	'join => + (2)'
+or diag explain($data),"\n";
+
+{
+	is_deeply
+		$data = xml2hash($xml1),
+		{root => {'-at' => 'key',nest => {'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}}},
+		'default (1)'
+	or diag explain($data),"\n";
+}
+{
+	is_deeply
+		$data = xml2hash($xml1, cdata => '#cdata'),
+		{root => {'-at' => 'key',nest => {'#cdata' => 'first','#text' => 'midlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}}},
+		'default (1)'
+	or diag explain($data),"\n";
+}
+{
+	is_deeply
+		$data = xml2hash($xml2),
+		{root => {'-at' => 'key',nest => 'first & mid & last'}},
+		'default (2)'
+	or diag explain($data),"\n";
+}
+{
+	is_deeply
+		$data = xml2hash($xml3),
+		{root => {'-at' => 'key',nest => {'#text' => 'first && last',v => 'x'}}},
+		'default (3)'
+	or diag explain($data),"\n";
+}
+{
+	is_deeply
+		$data = xml2hash($xml2, join => '+'),
+		{root => {'-at' => 'key',nest => 'first & mid & last'}},
+		'join => + (2)'
+	or diag explain($data),"\n";
+}
+{
+	is_deeply
+		$data = xml2hash($xml3, join => '+'),
+		{root => {'-at' => 'key',nest => { '#text' => 'first &+& last', v => 'x' } }},
+		'join => + (3)'
+	or diag explain($data),"\n";
+}
+{
+	$TODO = 'Not implemented yet';
+	is_deeply
+		$data = xml2hash($xml1, array => ['root']),
+		{root => [{'-at' => 'key',nest => {'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}}]},
+		'array => root (1)',
+	or diag explain($data),"\n";
+}
+{
+	$TODO = 'Not implemented yet';
+	is_deeply
+		$data = xml2hash($xml1, array => ['nest']),
+		{root => {'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}]}},
+		'array => nest (1)',
+	or diag explain($data),"\n";
+}
+{
+	$TODO = 'Not implemented yet';
+	is_deeply
+		$data = xml2hash($xml1, array => 1),
+		{root => [{'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => [''],v => ['a',{'-at' => 'a','#text' => 'b'}]}]}]},
+		'array => 1 (1)',
+	or diag explain($data),"\n";
+}

@@ -57,7 +57,6 @@ our $data;
 		'default (1)'
 	or diag dd($data),"\n";
 }
-__END__
 {
 	is_deeply
 		$data = xml2hash($xml1, cdata => '#cdata'),
@@ -87,14 +86,6 @@ __END__
 	or diag dd($data),"\n";
 }
 {
-	local $X2H{join} = '+';
-	is_deeply
-		$data = xml2hash($xml2),
-		{root => {'-at' => 'key',nest => 'first & mid & last'}},
-		'X2H.join = + (2)'
-	or diag dd($data),"\n";
-}
-{
 	is_deeply
 		$data = xml2hash($xml3, join => '+'),
 		{root => {'-at' => 'key',nest => { '#text' => 'first &+& last', v => 'x' } }},
@@ -102,22 +93,7 @@ __END__
 	or diag dd($data),"\n";
 }
 {
-	local $X2H{join} = '+';
-	is_deeply
-		$data = xml2hash($xml3),
-		{root => {'-at' => 'key',nest => { '#text' => 'first &+& last', v => 'x' } }},
-		'X2H.join = + (3)'
-	or diag dd($data),"\n";
-}
-{
-	local $X2A{root} = 1;
-	is_deeply
-		$data = xml2hash($xml1),
-		{root => [{'-at' => 'key',nest => {'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}}]},
-		'X2A.root (1)',
-	or print dd($data),"\n";
-}
-{
+	$TODO = 'Not implemented yet';
 	is_deeply
 		$data = xml2hash($xml1, array => ['root']),
 		{root => [{'-at' => 'key',nest => {'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}}]},
@@ -125,14 +101,7 @@ __END__
 	or diag dd($data),"\n";
 }
 {
-	local $X2A{nest} = 1;
-	is_deeply
-		$data = xml2hash($xml1),
-		{root => {'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}]}},
-		'X2A.nest (1)',
-	or diag dd($data),"\n";
-}
-{
+	$TODO = 'Not implemented yet';
 	is_deeply
 		$data = xml2hash($xml1, array => ['nest']),
 		{root => {'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}]}},
@@ -140,12 +109,14 @@ __END__
 	or diag dd($data),"\n";
 }
 {
+	$TODO = 'Not implemented yet';
 	is_deeply
 		$data = xml2hash($xml1, array => 1),
 		{root => [{'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => [''],v => ['a',{'-at' => 'a','#text' => 'b'}]}]}]},
 		'array => 1 (1)',
 	or diag dd($data),"\n";
 }
+__END__
 
 =for rem hash casting is useless and not implemented
 {

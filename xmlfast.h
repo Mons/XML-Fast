@@ -44,14 +44,14 @@ typedef struct {
 
 typedef struct {
 	void (*comment)(void *,char *, unsigned int);
-	void (*cdata)(void *,char *, unsigned int);
-	void (*text)(void *,char *, unsigned int);
+	void (*cdata)(void *,char *, unsigned int, unsigned int);
+	void (*text)(void *,char *, unsigned int, unsigned int);
 	void (*tagopen)(void *,char *, unsigned int);
 	void (*attrname)(void *,char *, unsigned int);
 	void (*attrvalpart)(void *,char *, unsigned int);
 	void (*attrval)(void *,char *, unsigned int);
 	void (*tagclose)(void *,char *, unsigned int);
-	void (*wsp)(void *,char *, unsigned int);
+	void (*wsp)(void *,char *, unsigned int, unsigned int);
 	void (*warn)(char *, ...);
 	void (*die)(char *, ...);
 } xml_callbacks;

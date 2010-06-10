@@ -9,6 +9,8 @@ do { \
 	er->children = N; \
 } while (0)
 
+#define XML_DEBUG 0
+
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents);
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents) {
 	unsigned char counts[256];
@@ -307,8 +309,6 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 							if (search) {
 								if (cb->comment) {
 									cb->comment( ctx, p, search - p );
-								} else {
-									printf("No comment callback, ignored\n");
 								}
 								p = search + 3;
 							} else xml_error("Comment node not terminated");
@@ -321,9 +321,7 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 							search = strstr(p,"]]>");
 							if (search) {
 								if (cb->cdata) {
-									cb->cdata( ctx, p, search - p );
-								} else {
-									printf("No cdata callback, ignored\n");
+									cb->cdata( ctx, p, search - p, 0 );
 								}
 								p = search + 3;
 							} else xml_error("Cdata node not terminated");
@@ -423,6 +421,7 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 					default: //<node...>
 						state = 0;
 						mainstate = TAG_OPEN;
+						if (XML_DEBUG) printf("Tag open begin\n");
 						while(state < 3) {
 							switch(state) {
 								case 0:
@@ -454,12 +453,12 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 									len = chain->len = p - at;
 									chain->name = safemalloc( chain->len + 1 );
 									strncpy(chain->name, at, len);
+									chain->name[len] = '\0';
 									if (cb->tagopen) cb->tagopen( ctx, at, len );
-									//print_chain(root, curr_depth);
-									
+									if (XML_DEBUG) print_chain(root, curr_depth);
 									break;
 								case 1:
-									//printf("reading attrs for %s, next='%c'\n",chain->name,*p);
+									if (XML_DEBUG) printf("reading attrs for %s, next='%c'\n",chain->name,*p);
 									if (search = parse_attrs(p,ctx,cb)) {
 										p = search;
 										state = 2;
@@ -468,7 +467,7 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 									}
 								case 2:
 									while(state == 2) {
-										//printf("state=2, char='%c'\n",*p);
+										if (XML_DEBUG) printf("state=2, char='%c'\n",*p);
 										switch(*p) {
 											case 0: goto eod;
 											case_wsp : p = eat_wsp(p);
@@ -485,6 +484,7 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 												goto fault;
 										}
 									}
+									if (XML_DEBUG) printf("End of state 2\n");
 									mainstate = CONTENT_WAIT;
 									goto next;
 							}
@@ -496,39 +496,35 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 				at = p;
 				textstate = TEXT_INITWSP;
 				char *lastwsp;
+				
+				unsigned int concat = 0;
+				if (XML_DEBUG) printf("Enter TEXT_READ, concat = %d\n",concat);
 				while (1) {
 					switch(*p) {
 						case 0  :
 						case '<':
 							if (p > at) {
+								if (XML_DEBUG) printf("TEXT_READ -> ready for leave, have concat=%d at=%d, p=%d, lastwsp=%d\n", concat, at, p, lastwsp);
 								if (textstate == TEXT_WSP) {
-									//printf("Got trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
-									if(cb->text) cb->text(ctx, at, lastwsp - at );
-									if(cb->wsp) cb->wsp(ctx, lastwsp, p - lastwsp ); // whitespace
+									if (XML_DEBUG) printf("Got trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
+									if(cb->text && lastwsp - at > 0) cb->text(ctx, at, lastwsp - at, concat++ );
+									if(cb->wsp && p - lastwsp > 0) cb->wsp(ctx, lastwsp, p - lastwsp, concat++ ); // whitespace
 								}
 								else if (textstate == TEXT_INITWSP) {
-									//printf("Got only whitespace\n");
-									if(cb->wsp) cb->wsp(ctx, at, p - at ); // whitespace
+									if (XML_DEBUG) printf("Got only whitespace\n");
+									if(cb->wsp) cb->wsp(ctx, at, p - at, concat++ ); // whitespace
 								}
 								else
 								{
-									if(cb->text) cb->text(ctx, at, p - at );
+									if(cb->text) cb->text(ctx, at, p - at, concat++ );
 								}
 								mainstate = CONTENT_WAIT;
 							}
+							if (XML_DEBUG) printf("Leave TEXT_READ\n");
 							if (*p == 0) goto eod;
 							goto next;
-						case '&':
-							end = p;
-							if( entity = parse_entity(&p) ) {
-								if(cb->text) {
-									if (end > at) cb->text(ctx, at, end - at);
-									cb->text(ctx, entity->entity, entity->length);
-								}
-								at = p;
-								break;
-							}
 						case_wsp :
+							if (XML_DEBUG) printf("TEXT_READ -> got wsp, next = '%c'\n",*p);
 							if (textstate == TEXT_DATA) {
 								lastwsp = p;
 							}
@@ -537,11 +533,25 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 							break;
 						default:
 							if ( textstate == TEXT_INITWSP && p > at ) {
-								//printf("Got initial whitespace\n");
-								if (cb->wsp) cb->wsp(ctx, at, p - at );
+								if (XML_DEBUG) printf("Got initial whitespace\n");
+								if (cb->wsp) cb->wsp(ctx, at, p - at, concat++ );
 								at = p;
 							}
 							textstate = TEXT_DATA;
+							if (*p == '&') {
+								if (XML_DEBUG) printf("TEXT_READ -> parse_entity, concat = %d\n",concat);
+								end = p;
+								if( entity = parse_entity(&p) ) {
+									if (XML_DEBUG) printf("TEXT_READ -> got entity %s, concat = %d\n",entity->entity,concat);
+									if(cb->text) {
+										if (end > at) cb->text(ctx, at, end - at, concat++);
+										cb->text(ctx, entity->entity, entity->length, concat++);
+									}
+									at = p;
+									if (XML_DEBUG) printf("TEXT_READ -> entity callback done, concat = %d, next='%c'\n",concat,*p);
+									break;
+								}
+							}
 							p++;
 					}
 				}

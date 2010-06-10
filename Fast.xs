@@ -23,6 +23,8 @@ typedef struct {
 	unsigned int order;
 	unsigned int trim;
 	unsigned int bytes;
+	unsigned int utf8upgrade;
+	unsigned int utf8decode;
 	SV  * attr;
 	SV  * text;
 	SV  * join;
@@ -54,18 +56,16 @@ typedef struct {
 				/* printf("push '%s' to array in key '%s'\n", SvPV_nolen(old), kv); */ \
 				av_push( av, sv ); \
 			} \
-			else if (SvTYPE( SvRV(*exists) ) == SVt_PVHV) { \
-				AV *av   = newAV(); \
-				SvREFCNT_inc(*exists); \
-				av_push( av, *exists ); \
-				av_push( av, sv ); \
-				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
-			}\
 			else { \
 				AV *av   = newAV(); \
-				SV *old  = newSV(0); \
-				sv_copypv(old, *exists); \
-				av_push( av, old ); \
+				if (SvROK(*exists)) { \
+					SvREFCNT_inc(*exists); \
+					av_push( av, *exists ); \
+				} else { \
+					SV *old  = newSV(0); \
+					sv_copypv(old, *exists); \
+					av_push( av, old ); \
+				} \
 				av_push( av, sv ); \
 				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
 			} \
@@ -74,16 +74,46 @@ typedef struct {
 		} \
 	} STMT_END
 
-#define hv_store_cat( hv, key, data, length ) \
+#define hv_store_cat( hv, key, sv ) \
 	STMT_START { \
 		SV **exists; \
 		char *kv = SvPV_nolen(key); \
 		int   kl = SvCUR(key); \
 		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
-			sv_catpvn(*exists, data,length);\
+			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
+				AV *av = (AV *) SvRV( *exists ); \
+				SV **val; \
+				I32 avlen = av_len(av); \
+				if ( (val = av_fetch(av,avlen,0)) && SvPOK(*val) ) { \
+					sv_catsv(*val, sv); \
+					SvREFCNT_dec(sv); \
+				} else { \
+					av_push( av, sv ); \
+				} \
+			} \
+			else { \
+				if (SvROK(*exists)) { \
+					croak("Can't concat to reference value %s",sv_reftype(SvRV(*exists),TRUE)); \
+				} else { \
+					sv_catsv(*exists, sv);\
+					SvREFCNT_dec(sv); \
+				} \
+			} \
 		} else { \
-			SV *sv = newSVpvn(data, length); \
 			hv_store(hv, kv, kl, sv, 0); \
+		} \
+	} STMT_END
+
+#define xml_sv_decode(ctx, sv) \
+	STMT_START { \
+		if (ctx->utf8upgrade) { \
+			SvUTF8_on(sv); \
+		} \
+		else if (ctx->utf8decode) { \
+			sv_utf8_decode(sv); \
+		} \
+		else if (ctx->encode) { \
+			(void) sv_recode_to_utf8(sv, ctx->encode); \
 		} \
 	} STMT_END
 
@@ -93,33 +123,24 @@ void on_comment(void * pctx, char * data,unsigned int length) {
 	hv_store_a(ctx->hcurrent, ctx->comm, sv );
 }
 
-void on_cdata(void * pctx, char * data,unsigned int length) {
+void on_cdata(void * pctx, char * data,unsigned int length, unsigned int nothing) {
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
-	if (ctx->encode) {
-		//printf("decode CDATA with %s\n",SvPV_nolen(ctx->encode));
-		(void) sv_recode_to_utf8(sv, ctx->encode);
-	}
-	else if (!ctx->bytes) {
-		SvUTF8_on(sv);
-		//sv_utf8_decode(sv);
-	}
+	xml_sv_decode(ctx,sv);
 	hv_store_a(ctx->hcurrent, ctx->cdata, sv );
 }
 
-void on_text(void * pctx, char * data,unsigned int length) {
+void on_text(void * pctx, char * data,unsigned int length, unsigned int concat) {
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
-	//printf("Got text for '%s'\n",SvPV_nolen(sv));
-	if (ctx->encode) {
-		//printf("decode TEXT with %s\n",SvPV_nolen(ctx->encode));
-		(void) sv_recode_to_utf8(sv, ctx->encode);
+	xml_sv_decode(ctx,sv);
+	if (concat) {
+		//printf("Got text for '%s', concatenate\n",SvPV_nolen(sv));
+		hv_store_cat( ctx->hcurrent, ctx->text, sv );
+	} else {
+		//printf("Got text for '%s', push new\n",SvPV_nolen(sv));
+		hv_store_a( ctx->hcurrent, ctx->text, sv );
 	}
-	else if (!ctx->bytes) {
-		SvUTF8_on(sv);
-		//sv_utf8_decode(sv);
-	}
-	hv_store_a( ctx->hcurrent, ctx->text, sv );
 }
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
@@ -129,7 +150,7 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 	//hv_store(ctx->hcurrent, data, length, sv, 0);
 	ctx->depth++;
 	if (ctx->depth >= ctx->chainsize) {
-		Perl_warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
+		warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
 		HV ** keep = ctx->hchain;
 		ctx->hchain = safemalloc( sizeof(ctx->hcurrent) * ctx->chainsize * 2);
 		memcpy(ctx->hchain, keep, sizeof(ctx->hcurrent) * ctx->chainsize * 2);
@@ -205,7 +226,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 				//else
 				{
 					// Remebmer for use if it is single
-					Perl_warn("# No join\n");
+					warn("# No join\n");
 					svtext = newRV( (SV *) av );
 				}
 			} else {
@@ -223,6 +244,13 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
 		ctx->hchain[ ctx->depth ];// = (HV *)NULL;
 		ctx->depth--;
+		if (keys == 0) {
+			//printf("Tag %s have no keys\n", SvPV_nolen(tag));
+			SvREFCNT_dec(hv);
+			SV *sv = newSVpvn("",0);
+			hv_store_a(ctx->hcurrent, tag, sv);
+		}
+		else
 		if (keys == 1 && svtext) {
 			//SV *sx   = newSVpvn(data, length);sv_2mortal(sx);
 			//printf("Hash in tag '%s' for destruction have refcnt = %d (%lx | %lx)\n",SvPV_nolen(sx),SvREFCNT(hv), hv, ctx->hcurrent);
@@ -284,6 +312,7 @@ void on_attr_val(void * pctx, char * data,unsigned int length) {
 	} else {
 		ctx->attrval = newSVpvn(data, length);
 	}
+	xml_sv_decode(ctx,ctx->attrval);
 	hv_store_a(ctx->hcurrent, ctx->attrname, ctx->attrval);
 	sv_2mortal(ctx->attrname);
 	//sv_2mortal(ctx->attrval);
@@ -292,19 +321,11 @@ void on_attr_val(void * pctx, char * data,unsigned int length) {
 }
 
 void on_warn(char * format, ...) {
-	/*
-		my_vsnprintf
-		The C library vsnprintf if available and standards-compliant.
-		However, if if the vsnprintf is not available, will unfortunately use the unsafe
-		vsprintf which can overrun the buffer (there is an overrun check, but that may
-		be too late). Consider using sv_vcatpvf instead, or getting vsnprintf.
-	*/
 	va_list va;
 	va_start(va,format);
-	char buffer[1024];
-	// TODO (segfault)
-	vsnprintf(buffer,1023,format,va);
-	Perl_warn(aTHX_ "%s",buffer);
+	SV *text = sv_2mortal(newSVpvn("",0));
+	sv_vcatpvf(text, format, &va);
+	warn("%s",SvPV_nolen(text));
 	va_end(va);
 }
 
@@ -383,10 +404,17 @@ _xml2hash(xml,conf)
 		}
 		if ((key = hv_fetch(conf, "bytes", 5, 0)) && SvTRUE(*key)) {
 			ctx.bytes = 1;
+		} else {
+			if ((key = hv_fetch(conf, "utf8decode", 10, 0)) && SvTRUE(*key)) {
+				ctx.utf8decode = 1;
+			} else {
+				ctx.utf8upgrade = 1;
+			}
 		}
 		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
 			ctx.trim = 1;
 		}
+		
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
 			ctx.attr = *key;
 		}
@@ -438,7 +466,11 @@ _xml2hash(xml,conf)
 			cbs.attrname     = on_attr_name;
 			cbs.attrvalpart  = on_attr_val_part;
 			cbs.attrval      = on_attr_val;
-			cbs.warn         = on_warn;
+			if ((key = hv_fetch(conf, "nowarn", 6, 0)) && SvTRUE(*key)) {
+				//
+			} else {
+				cbs.warn         = on_warn;
+			}
 			
 			if(ctx.comm)
 				cbs.comment      = on_comment;
