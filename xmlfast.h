@@ -20,12 +20,6 @@
 #define PROCESSING_INSTRUCTION 0x0001
 #define TEXT_NODE              0x0002
 
-#define case_wsp   \
-		case 0x9  :\
-		case 0xa  :\
-		case 0xd  :\
-		case 0x20
-
 typedef struct {
 	char * str;
 	char * val;
@@ -43,15 +37,17 @@ typedef struct {
 } xml_node;
 
 typedef struct {
+	unsigned int save_wsp;
 	void (*comment)(void *,char *, unsigned int);
 	void (*cdata)(void *,char *, unsigned int, unsigned int);
 	void (*text)(void *,char *, unsigned int, unsigned int);
+	void (*textpart)(void *,char *, unsigned int);
+	void (*wsp)(void *,char *, unsigned int, unsigned int);
 	void (*tagopen)(void *,char *, unsigned int);
 	void (*attrname)(void *,char *, unsigned int);
 	void (*attrvalpart)(void *,char *, unsigned int);
 	void (*attrval)(void *,char *, unsigned int);
 	void (*tagclose)(void *,char *, unsigned int);
-	void (*wsp)(void *,char *, unsigned int, unsigned int);
 	void (*warn)(char *, ...);
 	void (*die)(char *, ...);
 } xml_callbacks;

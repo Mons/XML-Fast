@@ -6,7 +6,7 @@ BEGIN {
 	my $add = 0;
 	eval {require Test::NoWarnings;Test::NoWarnings->import; ++$add; 1 }
 		or diag "Test::NoWarnings missed, skipping no warnings test";
-	plan tests => 29 + $add;
+	plan tests => 9 + $add;
 }
 
 use lib::abs '../lib';

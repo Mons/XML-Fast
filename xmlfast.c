@@ -9,6 +9,14 @@ do { \
 	er->children = N; \
 } while (0)
 
+ // case 0xa  : line_number++;
+
+#define case_wsp   \
+		case 0xa  :\
+		case 0x9  :\
+		case 0xd  :\
+		case 0x20
+
 #define XML_DEBUG 0
 
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents);
@@ -275,6 +283,7 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 	root = chain = safemalloc( sizeof(xml_node) * chain_depth );
 	unsigned char node_closed;
 	struct entityref *entity;
+	unsigned int line;
 
 #define DOCUMENT_START 0
 #define LT_OPEN        1
@@ -494,49 +503,27 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 			default:
 				mainstate = TEXT_READ;
 				at = p;
-				textstate = TEXT_INITWSP;
-				char *lastwsp;
+				char *lastwsp = 0;
+
+/*				
+				char *begin;
+				char *textdata;
+				char *tailwsp;
 				
-				unsigned int concat = 0;
-				if (XML_DEBUG) printf("Enter TEXT_READ, concat = %d\n",concat);
 				while (1) {
 					switch(*p) {
 						case 0  :
 						case '<':
-							if (p > at) {
-								if (XML_DEBUG) printf("TEXT_READ -> ready for leave, have concat=%d at=%d, p=%d, lastwsp=%d\n", concat, at, p, lastwsp);
-								if (textstate == TEXT_WSP) {
-									if (XML_DEBUG) printf("Got trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
-									if(cb->text && lastwsp - at > 0) cb->text(ctx, at, lastwsp - at, concat++ );
-									if(cb->wsp && p - lastwsp > 0) cb->wsp(ctx, lastwsp, p - lastwsp, concat++ ); // whitespace
-								}
-								else if (textstate == TEXT_INITWSP) {
-									if (XML_DEBUG) printf("Got only whitespace\n");
-									if(cb->wsp) cb->wsp(ctx, at, p - at, concat++ ); // whitespace
-								}
-								else
-								{
-									if(cb->text) cb->text(ctx, at, p - at, concat++ );
-								}
-								mainstate = CONTENT_WAIT;
+							if (textstate == TEXT_WSP) {
+								//trailing whitespace
 							}
-							if (XML_DEBUG) printf("Leave TEXT_READ\n");
-							if (*p == 0) goto eod;
-							goto next;
+							goto eod;
 						case_wsp :
 							if (XML_DEBUG) printf("TEXT_READ -> got wsp, next = '%c'\n",*p);
-							if (textstate == TEXT_DATA) {
-								lastwsp = p;
-							}
-							if (textstate != TEXT_INITWSP) textstate = TEXT_WSP;
+							if (textstate == TEXT_DATA) { lastwsp = p; }
+							textstate = TEXT_WSP;
 							p++;
-							break;
 						default:
-							if ( textstate == TEXT_INITWSP && p > at ) {
-								if (XML_DEBUG) printf("Got initial whitespace\n");
-								if (cb->wsp) cb->wsp(ctx, at, p - at, concat++ );
-								at = p;
-							}
 							textstate = TEXT_DATA;
 							if (*p == '&') {
 								if (XML_DEBUG) printf("TEXT_READ -> parse_entity, concat = %d\n",concat);
@@ -546,6 +533,70 @@ void parse (char * xml, void * ctx, xml_callbacks * cb) {
 									if(cb->text) {
 										if (end > at) cb->text(ctx, at, end - at, concat++);
 										cb->text(ctx, entity->entity, entity->length, concat++);
+									}
+									at = p;
+									if (XML_DEBUG) printf("TEXT_READ -> entity callback done, concat = %d, next='%c'\n",concat,*p);
+									break;
+								}
+							}
+							p++;
+					}
+				}
+*/
+				unsigned int concat = 0;
+				if (XML_DEBUG) printf("Enter TEXT_READ, concat = %d\n",concat);
+				if (!cb->save_wsp) {
+					// Try to eat initial whitespace
+					p = eat_wsp(p);
+					if (p > at) {
+						//printf("!! Skipped initial whitespace length=%d\n", p - at);
+						at = p;
+					}
+				}
+				textstate = TEXT_DATA;
+				while (1) {
+					switch(*p) {
+						case 0  :
+						case '<':
+							if (p > at) {
+								if (XML_DEBUG) printf("TEXT_READ -> ready for leave, have concat=%d at=%d, p=%d, lastwsp=%d\n", concat, at, p, lastwsp);
+								if (!cb->save_wsp && textstate == TEXT_WSP) {
+									//if (XML_DEBUG)
+									//printf("Skip trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
+									
+								} else {
+									lastwsp = p;
+								}
+								if(cb->text) {
+									if (lastwsp  > at) {
+										cb->text(ctx, at, lastwsp - at, concat++ );
+									} else {
+										cb->text(ctx, "", 0, concat++ ); // we need a terminator
+									}
+								}
+							} else {
+								if (XML_DEBUG) printf("!! Got no text data\n");
+							}
+							mainstate = CONTENT_WAIT;
+							if (XML_DEBUG) printf("Leave TEXT_READ\n");
+							if (*p == 0) goto eod;
+							goto next;
+						case_wsp :
+							if (XML_DEBUG) printf("TEXT_READ -> got wsp, next = '%c'\n",*p);
+							if (textstate == TEXT_DATA) { lastwsp = p; }
+							textstate = TEXT_WSP;
+							p++;
+							break;
+						default:
+							textstate = TEXT_DATA;
+							if (*p == '&') {
+								if (XML_DEBUG) printf("TEXT_READ -> parse_entity, concat = %d\n",concat);
+								end = p;
+								if( entity = parse_entity(&p) ) {
+									if (XML_DEBUG) printf("TEXT_READ -> got entity %s, concat = %d\n",entity->entity,concat);
+									if(cb->text) {
+										if (end > at) cb->textpart(ctx, at, end - at);
+										cb->textpart(ctx, entity->entity, entity->length);
 									}
 									at = p;
 									if (XML_DEBUG) printf("TEXT_READ -> entity callback done, concat = %d, next='%c'\n",concat,*p);

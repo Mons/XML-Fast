@@ -41,6 +41,7 @@ typedef struct {
 	SV  * ctag;
 	SV  * attrname;
 	SV  * attrval;
+	SV  * textval;
 	
 } parsestate;
 
@@ -130,17 +131,25 @@ void on_cdata(void * pctx, char * data,unsigned int length, unsigned int nothing
 	hv_store_a(ctx->hcurrent, ctx->cdata, sv );
 }
 
+void on_text_part(void * pctx, char * data, unsigned int length) {
+	parsestate *ctx = pctx;
+	if (ctx->textval) {
+		if (length > 0 ) { sv_catpvn(ctx->textval, data, length); }
+	} else {
+		ctx->textval = newSVpvn(data, length);
+	}
+}
+
 void on_text(void * pctx, char * data,unsigned int length, unsigned int concat) {
 	parsestate *ctx = pctx;
-	SV *sv   = newSVpvn(data, length);
-	xml_sv_decode(ctx,sv);
-	if (concat) {
-		//printf("Got text for '%s', concatenate\n",SvPV_nolen(sv));
-		hv_store_cat( ctx->hcurrent, ctx->text, sv );
+	if (ctx->textval) {
+		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
 	} else {
-		//printf("Got text for '%s', push new\n",SvPV_nolen(sv));
-		hv_store_a( ctx->hcurrent, ctx->text, sv );
+		ctx->textval = newSVpvn(data, length);
 	}
+	xml_sv_decode(ctx,ctx->textval);
+	hv_store_a( ctx->hcurrent, ctx->text, ctx->textval );
+	ctx->textval = 0;
 }
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
@@ -480,11 +489,13 @@ _xml2hash(xml,conf)
 			else if(ctx.text)
 				cbs.cdata        = on_text;
 			
-			if(ctx.text)
+			if(ctx.text) {
 				cbs.text         = on_text;
+				cbs.textpart     = on_text_part;
+			}
 			
 			if (!ctx.trim)
-				cbs.wsp          = on_text;
+				cbs.save_wsp     = 1;
 		}
 		parse(xml,&ctx,&cbs);
 		if(ctx.encode) SvREFCNT_dec(ctx.encode);

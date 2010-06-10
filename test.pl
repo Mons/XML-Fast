@@ -69,13 +69,17 @@ $bigxml = "<?xml version=\"1.0\"?>".
 }
 if (1){
 say dumper(
+	XML::Fast::xml2hash($xml2, trim => 0, join => undef)
+);
+say dumper(
+	XML::Fast::xml2hash($xml3, join => undef)
+);
+exit if $ARGV[0] eq 'dump';
+say dumper(
 	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text</test>"),
 );
 say dumper(
 	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text&amp;text</test>",join=>undef),
-);
-say dumper(
-	XML::Fast::xml2hash($xml3, join => undef)
 );
 say Data::Dumper::Dumper +
 my $xml = XML::Fast::xml2hash($bigxml, cdata => '#', comm => '//');
