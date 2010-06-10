@@ -11,10 +11,18 @@
 #include <string.h>
 #include <strings.h>
 
+/*
+commit 30866c9f74d890c45e8da27ea855468a314a59cf
+xmlbare 1785/s      --    -19%
+xmlfast 2209/s     24%      --
+
+*/
+
 typedef struct {
 	// config
 	unsigned int order;
 	unsigned int trim;
+	unsigned int bytes;
 	SV  * attr;
 	SV  * text;
 	SV  * join;
@@ -22,6 +30,8 @@ typedef struct {
 	SV  * comm;
 
 	// state
+	char *encoding;
+	SV   *encode;
 	int depth;
 	unsigned int chainsize;
 	HV ** hchain;
@@ -43,10 +53,18 @@ typedef struct {
 				AV *av = (AV *) SvRV( *exists ); \
 				/* printf("push '%s' to array in key '%s'\n", SvPV_nolen(old), kv); */ \
 				av_push( av, sv ); \
-			} else { \
+			} \
+			else if (SvTYPE( SvRV(*exists) ) == SVt_PVHV) { \
+				AV *av   = newAV(); \
+				HV *old  = (HV *) SvRV( *exists ); \
+				av_push( av, newRV( (SV *) old ) ); \
+				av_push( av, sv ); \
+				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
+			}\
+			else { \
 				AV *av   = newAV(); \
 				SV *old  = newSV(0); \
-				sv_copypv(old,*exists); \
+				sv_copypv(old, *exists); \
 				av_push( av, old ); \
 				av_push( av, sv ); \
 				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
@@ -63,7 +81,6 @@ typedef struct {
 		int   kl = SvCUR(key); \
 		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
 			sv_catpvn(*exists, data,length);\
-			\
 		} else { \
 			SV *sv = newSVpvn(data, length); \
 			hv_store(hv, kv, kl, sv, 0); \
@@ -79,6 +96,14 @@ void on_comment(void * pctx, char * data,unsigned int length) {
 void on_cdata(void * pctx, char * data,unsigned int length) {
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
+	if (ctx->encode) {
+		//printf("decode CDATA with %s\n",SvPV_nolen(ctx->encode));
+		(void) sv_recode_to_utf8(sv, ctx->encode);
+	}
+	else if (!ctx->bytes) {
+		SvUTF8_on(sv);
+		//sv_utf8_decode(sv);
+	}
 	hv_store_a(ctx->hcurrent, ctx->cdata, sv );
 }
 
@@ -86,6 +111,14 @@ void on_text(void * pctx, char * data,unsigned int length) {
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
 	//printf("Got text for '%s'\n",SvPV_nolen(sv));
+	if (ctx->encode) {
+		//printf("decode TEXT with %s\n",SvPV_nolen(ctx->encode));
+		(void) sv_recode_to_utf8(sv, ctx->encode);
+	}
+	else if (!ctx->bytes) {
+		SvUTF8_on(sv);
+		//sv_utf8_decode(sv);
+	}
 	hv_store_a( ctx->hcurrent, ctx->text, sv );
 }
 
@@ -275,6 +308,43 @@ void on_warn(char * format, ...) {
 	va_end(va);
 }
 
+SV * find_encoding(char * encoding) {
+	dSP;
+	int count;
+	//require_pv("Encode.pm");
+	
+	ENTER;
+	SAVETMPS;
+	//printf("searching encoding '%s'\n",encoding);
+	
+	PUSHMARK(SP);
+	XPUSHs(sv_2mortal(newSVpv(encoding, 0)));
+	PUTBACK;
+	
+	count = call_pv("Encode::find_encoding",G_SCALAR);
+	
+	SPAGAIN;
+	if (SvTRUE(ERRSV)) {
+		printf("Shit happens: %s\n", SvPV_nolen(ERRSV));
+		POPs;
+	}
+	
+	if (count != 1)
+		croak("Bad number of returned values: %d",count);
+	
+	SV *encode = POPs;
+	//sv_dump(encode);
+	SvREFCNT_inc(encode);
+	//printf("Got encode=%s for encoding='%s'\n",SvPV_nolen(encode),encoding);
+	
+	PUTBACK;
+	
+	FREETMPS;
+	LEAVE;
+	
+	return encode;
+}
+
 /*
 #define newRVHV() newRV_noinc((SV *)newHV())
 #define rv_hv_store(rv,key,len,sv,f) hv_store((HV*)SvRV(rv), key,len,sv,f)
@@ -301,6 +371,7 @@ _xml2hash(xml,conf)
 		char *xml;
 		HV *conf;
 	CODE:
+		
 		parsestate ctx;
 		memset(&ctx,0,sizeof(parsestate));
 		SV **key;
@@ -310,26 +381,26 @@ _xml2hash(xml,conf)
 		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
 			ctx.trim = 1;
 		}
+		if ((key = hv_fetch(conf, "bytes", 5, 0)) && SvTRUE(*key)) {
+			ctx.bytes = 1;
+		}
 		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
 			ctx.trim = 1;
 		}
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
-			//sv_copypv(ctx.attr = sv_newmortal(),*key);
 			ctx.attr = *key;
-			//ctx.attrv = SvPV_nolen(*key);
-			//ctx.attrl = SvCUR(*key);
 		}
 		if ((key = hv_fetch(conf, "text", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.text = sv_newmortal(),*key);
+			ctx.text = *key;
 		}
 		if ((key = hv_fetch(conf, "join", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.join = sv_newmortal(),*key);
+			ctx.join = *key;
 		}
 		if ((key = hv_fetch(conf, "cdata", 5, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.cdata = sv_newmortal(),*key);
+			ctx.cdata = *key;
 		}
 		if ((key = hv_fetch(conf, "comm", 4, 0)) && SvPOK(*key)) {
-			sv_copypv(ctx.comm = sv_newmortal(),*key);
+			ctx.comm = *key;
 		}
 		
 		if ((key = hv_fetch(conf, "_max_depth", 10, 0)) && SvOK(*key)) {
@@ -344,8 +415,14 @@ _xml2hash(xml,conf)
 		
 		xml_callbacks cbs;
 		memset(&cbs,0,sizeof(xml_callbacks));
-		//ctx.trash = newRV_noinc( (SV *)newAV() );
-		//sv_2mortal(ctx.trash);
+		if (!ctx.bytes) {
+			//if (utf8) {
+				ctx.encoding = "utf8";
+			//} else {
+			//	ctx.encoding = "utf-8";
+			//	ctx.encode = find_encoding(ctx.encoding);
+			//}
+		}
 		
 		if (ctx.order) {
 			croak("Ordered mode not implemented yet\n");
@@ -378,6 +455,7 @@ _xml2hash(xml,conf)
 				cbs.wsp          = on_text;
 		}
 		parse(xml,&ctx,&cbs);
+		if(ctx.encode) SvREFCNT_dec(ctx.encode);
 		safefree(ctx.hchain);
 	OUTPUT:
 		RETVAL

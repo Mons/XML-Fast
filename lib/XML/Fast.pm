@@ -3,6 +3,7 @@ package XML::Fast;
 use 5.012000;
 use strict;
 use warnings;
+use Encode;
 
 require Exporter;
 

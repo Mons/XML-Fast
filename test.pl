@@ -2,6 +2,7 @@
 use uni::perl ':dumper';
 no warnings qw(internal FATAL);
 use warnings qw(internal);
+use Data::Dumper;
 use ExtUtils::testlib;
 use XML::Fast;
 use Devel::Leak;
@@ -12,19 +13,22 @@ my $handle;
 #XML::Fast::_test();
 #Devel::Leak::CheckSV($handle);
 #exit;
-
-my $bigxml = "<?xml version=\"1.0\"?>".
+my $bigxml;
+{
+no utf8;
+$bigxml = "<?xml version=\"1.0\"?>".
 			"<test1 a='1&amp;234-5678-9012-3456-7890'>".
 				"<testi x='x' x='y' x = 'z' />".
 				"<testz x='a' x='b>' x='c' / >".
-				"<repeated><node>node1</node><node>node2</node></repeated>".
+				"<repeated><node>node1</node><node>node2</node><node>node3</node></repeated>".
+				"<repeated1><node attr='1'>node1</node><node attr='2'>node2</node><node attr='3'>node3</node></repeated1>".
 				"<test2>".
 					"<test3>".
 						"some text".
 						"<!-- comment1 -->".
 						"<!-- comment2 -->".
 						"<!-- comment3 -->".
-						"<![CDATA[cda]]>".
+						"<![CDATA[cda это тест]]>".
 						"ok1&amp;ok2&gttest".
 						"<i>itest<s>istest<b>isbtest</i>sbtest</b>stest2</s>".
 						"iiiiii   ".
@@ -33,7 +37,7 @@ my $bigxml = "<?xml version=\"1.0\"?>".
 				"<wsp>  abc  </wsp>".
 				"<multy>abc&ampxyz</multy>".
 			"</test1 >\n";
-
+}
 if (1){
 say dumper(
 	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text</test>"),
@@ -41,7 +45,8 @@ say dumper(
 say dumper(
 	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text&amp;text</test>",join=>undef),
 );
-say dumper +
+#say dumper +
+say Data::Dumper::Dumper +
 my $xml = XML::Fast::xml2hash($bigxml);
 exit if $ARGV[0] eq 'dump';
 }
@@ -77,3 +82,71 @@ XML::Fast::xml2hash("", trim => undef);
 XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => 0);
 XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => '');
 XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => 1);
+
+use Test::More qw(no_plan);
+
+is_deeply
+	XML::Fast::xml2hash($bigxml),
+{
+          'test1' => {
+                       'repeated' => {
+                                       'node' => [
+                                                   'node1',
+                                                   'node2',
+                                                   'node3'
+                                                 ]
+                                     },
+                       'repeated1' => {
+                                        'node' => [
+                                                    {
+                                                      '-attr' => '1',
+                                                      '#text' => 'node1'
+                                                    },
+                                                    {
+                                                      '-attr' => '2',
+                                                      '#text' => 'node2'
+                                                    },
+                                                    {
+                                                      '-attr' => '3',
+                                                      '#text' => 'node3'
+                                                    }
+                                                  ]
+                                      },
+                       'multy' => 'abc&xyz',
+                       'wsp' => 'abc',
+                       'test2' => {
+                                    'test3' => {
+                                                 '#' => "cda \x{44d}\x{442}\x{43e} \x{442}\x{435}\x{441}\x{442}",
+                                                 '#text' => 'some textok1&ok2>testsbteststest2iiiiii',
+                                                 'i' => {
+                                                          '#text' => 'itest',
+                                                          's' => {
+                                                                   'b' => 'isbtest',
+                                                                   '#text' => 'istest'
+                                                                 }
+                                                        },
+                                                 '//' => [
+                                                           ' comment1 ',
+                                                           ' comment2 ',
+                                                           ' comment3 '
+                                                         ]
+                                               }
+                                  },
+                       '-a' => '1&234-5678-9012-3456-7890',
+                       'testz' => {
+                                    '-x' => [
+                                              'a',
+                                              'b>',
+                                              'c'
+                                            ]
+                                  },
+                       'testi' => {
+                                    '-x' => [
+                                              'x',
+                                              'y',
+                                              'z'
+                                            ]
+                                  }
+                     }
+        }
+, 'big test';
