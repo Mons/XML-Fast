@@ -56,8 +56,8 @@ typedef struct {
 			} \
 			else if (SvTYPE( SvRV(*exists) ) == SVt_PVHV) { \
 				AV *av   = newAV(); \
-				HV *old  = (HV *) SvRV( *exists ); \
-				av_push( av, newRV( (SV *) old ) ); \
+				SvREFCNT_inc(*exists); \
+				av_push( av, *exists ); \
 				av_push( av, sv ); \
 				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
 			}\
