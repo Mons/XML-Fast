@@ -119,12 +119,14 @@ typedef struct {
 	} STMT_END
 
 void on_comment(void * pctx, char * data,unsigned int length) {
+	if (!pctx) croak("Context not passed to on_comment");
 	parsestate *ctx = pctx;
 	SV         *sv  = newSVpvn(data, length);
 	hv_store_a(ctx->hcurrent, ctx->comm, sv );
 }
 
 void on_cdata(void * pctx, char * data,unsigned int length, unsigned int nothing) {
+	if (!pctx) croak("Context not passed to on_cdata");
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
 	xml_sv_decode(ctx,sv);
@@ -132,6 +134,7 @@ void on_cdata(void * pctx, char * data,unsigned int length, unsigned int nothing
 }
 
 void on_text_part(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_text_part");
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
 		if (length > 0 ) { sv_catpvn(ctx->textval, data, length); }
@@ -141,6 +144,7 @@ void on_text_part(void * pctx, char * data, unsigned int length) {
 }
 
 void on_text(void * pctx, char * data,unsigned int length, unsigned int concat) {
+	if (!pctx) croak("Context not passed to on_text");
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
 		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
@@ -153,6 +157,7 @@ void on_text(void * pctx, char * data,unsigned int length, unsigned int concat) 
 }
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_tag_open");
 	parsestate *ctx = pctx;
 	HV * hv = newHV();
 	//SV *sv = newRV_noinc( (SV *) hv );
@@ -173,6 +178,7 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 }
 
 void on_tag_close(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_tag_close");
 	parsestate *ctx = pctx;
 	// TODO: check node name
 	
@@ -281,6 +287,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 }
 
 void on_attr_name(void * pctx, char * data,unsigned int length) {
+	if (!pctx) croak("Context not passed to on_attr_name");
 	parsestate *ctx = pctx;
 	if (ctx->attrname) {
 		croak("Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
@@ -300,6 +307,7 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 }
 
 void on_attr_val_part(void * pctx, char * data,unsigned int length) {
+	if (!pctx) croak("Context not passed to on_attr_val_part");
 	parsestate *ctx = pctx;
 	if(!ctx->attrname) {
 		croak("Got attrval without attrname\n");
@@ -312,6 +320,7 @@ void on_attr_val_part(void * pctx, char * data,unsigned int length) {
 }
 
 void on_attr_val(void * pctx, char * data,unsigned int length) {
+	if (!pctx) croak("Context not passed to on_attr_val");
 	parsestate *ctx = pctx;
 	if(!ctx->attrname) {
 		croak("Got attrval without attrname\n");
@@ -330,6 +339,7 @@ void on_attr_val(void * pctx, char * data,unsigned int length) {
 }
 
 void on_warn(char * format, ...) {
+	//if (!pctx) croak("Context not passed");
 	va_list va;
 	va_start(va,format);
 	SV *text = sv_2mortal(newSVpvn("",0));
@@ -401,9 +411,12 @@ _xml2hash(xml,conf)
 		char *xml;
 		HV *conf;
 	CODE:
+		parser_state state;
+		memset(&state,0,sizeof(state));
 		
 		parsestate ctx;
 		memset(&ctx,0,sizeof(parsestate));
+		state.ctx = &ctx;
 		SV **key;
 		if ((key = hv_fetch(conf, "order", 5, 0)) && SvTRUE(*key)) {
 			ctx.order = 1;
@@ -450,8 +463,8 @@ _xml2hash(xml,conf)
 		}
 		
 		
-		xml_callbacks cbs;
-		memset(&cbs,0,sizeof(xml_callbacks));
+		//xml_callbacks cbs;
+		//memset(&cbs,0,sizeof(xml_callbacks));
 		if (!ctx.bytes) {
 			//if (utf8) {
 				ctx.encoding = "utf8";
@@ -470,34 +483,34 @@ _xml2hash(xml,conf)
 			ctx.depth = -1;
 			
 			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
-			cbs.tagopen      = on_tag_open;
-			cbs.tagclose     = on_tag_close;
-			cbs.attrname     = on_attr_name;
-			cbs.attrvalpart  = on_attr_val_part;
-			cbs.attrval      = on_attr_val;
+			state.cb.tagopen      = on_tag_open;
+			state.cb.tagclose     = on_tag_close;
+			state.cb.attrname     = on_attr_name;
+			state.cb.attrvalpart  = on_attr_val_part;
+			state.cb.attrval      = on_attr_val;
 			if ((key = hv_fetch(conf, "nowarn", 6, 0)) && SvTRUE(*key)) {
 				//
 			} else {
-				cbs.warn         = on_warn;
+				state.cb.warn         = on_warn;
 			}
 			
 			if(ctx.comm)
-				cbs.comment      = on_comment;
+				state.cb.comment      = on_comment;
 			
 			if(ctx.cdata)
-				cbs.cdata        = on_cdata;
+				state.cb.cdata        = on_cdata;
 			else if(ctx.text)
-				cbs.cdata        = on_text;
+				state.cb.cdata        = on_text;
 			
 			if(ctx.text) {
-				cbs.text         = on_text;
-				cbs.textpart     = on_text_part;
+				state.cb.text         = on_text;
+				state.cb.textpart     = on_text_part;
 			}
 			
 			if (!ctx.trim)
-				cbs.save_wsp     = 1;
+				state.save_wsp     = 1;
 		}
-		parse(xml,&ctx,&cbs);
+		parse(xml,&state);
 		if(ctx.encode) SvREFCNT_dec(ctx.encode);
 		safefree(ctx.hchain);
 	OUTPUT:

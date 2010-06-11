@@ -37,7 +37,6 @@ typedef struct {
 } xml_node;
 
 typedef struct {
-	unsigned int save_wsp;
 	void (*comment)(void *,char *, unsigned int);
 	void (*cdata)(void *,char *, unsigned int, unsigned int);
 	void (*text)(void *,char *, unsigned int, unsigned int);
@@ -51,6 +50,15 @@ typedef struct {
 	void (*warn)(char *, ...);
 	void (*die)(char *, ...);
 } xml_callbacks;
+
+typedef struct {
+	unsigned      line_number;
+	char          * last_newline;
+	unsigned int  save_wsp;
+	unsigned int  state;
+	xml_callbacks cb;
+	void     * ctx;          // context for the caller, black box for us
+} parser_state;
 
 struct entityref{
 	char         c;
@@ -75,6 +83,6 @@ static entity entitydef[] = {
 	,{ "quot",   "\"" }
 };
 
-extern void parse (char * xml, void * ctx, xml_callbacks * cb);
+extern void parse (char * xml, parser_state * state);
 
 #endif
