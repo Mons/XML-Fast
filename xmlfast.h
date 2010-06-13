@@ -33,10 +33,11 @@ typedef struct {
 typedef struct {
 	char *name;
 	unsigned int len;
-	char closed;
 } xml_node;
 
 typedef struct {
+	void (*piopen)(void *,char *, unsigned int);
+	void (*piclose)(void *,char *, unsigned int);
 	void (*comment)(void *,char *, unsigned int);
 	void (*cdata)(void *,char *, unsigned int, unsigned int);
 	void (*text)(void *,char *, unsigned int, unsigned int);
@@ -52,12 +53,22 @@ typedef struct {
 } xml_callbacks;
 
 typedef struct {
-	unsigned      line_number;
+	unsigned        line_number;
 	char          * last_newline;
-	unsigned int  save_wsp;
-	unsigned int  state;
-	xml_callbacks cb;
-	void     * ctx;          // context for the caller, black box for us
+	unsigned int    save_wsp;
+	unsigned int    state;
+	
+	unsigned int    chain_size;
+	xml_node      * root;
+	xml_node      * chain;
+	int             depth;
+	
+	unsigned int    pathsize;
+	unsigned int    pathlen;
+	char          * path;
+	
+	xml_callbacks   cb;
+	void          * ctx;          // context for the caller, black box for us
 } parser_state;
 
 struct entityref{

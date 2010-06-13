@@ -71,16 +71,19 @@ if (1){
 say dumper(
 	XML::Fast::xml2hash($xml2, trim => 0, join => undef)
 );
+exit if $ARGV[0] eq 'dump1';
 say dumper(
 	XML::Fast::xml2hash($xml3, join => undef)
 );
-exit if $ARGV[0] eq 'dump';
+exit if $ARGV[0] eq 'dump2';
 say dumper(
 	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text</test>"),
 );
+exit if $ARGV[0] eq 'dump3';
 say dumper(
-	XML::Fast::xml2hash("<?xml version=\"1.0\"?><test>text&amp;text</test>",join=>undef),
+	XML::Fast::xml2hash("<?xml version=\"1.0\" encoding='utf-8' ?><test>text&amp;text</test>",join=>undef),
 );
+exit if $ARGV[0] eq 'dump4';
 say Data::Dumper::Dumper +
 my $xml = XML::Fast::xml2hash($bigxml, cdata => '#', comm => '//');
 exit if $ARGV[0] eq 'dump';
@@ -121,7 +124,7 @@ XML::Fast::xml2hash("<?xml version=\"1.0\"?>", trim => 1);
 use Test::More qw(no_plan);
 
 is_deeply
-	XML::Fast::xml2hash($bigxml, cdata => '#', comm => '//'),
+	$data = XML::Fast::xml2hash($bigxml, cdata => '#', comm => '//'),
 {
           'test1' => {
                        'empty' => '',
@@ -185,7 +188,9 @@ is_deeply
                                   }
                      }
         }
-, 'big test';
+, 'big test'
+or diag explain($data),"\n";
+
 is_deeply
 	$data = xml2hash($xml2, join => '+'),
 	{root => {'-at' => 'key',nest => 'first & mid & last'}},

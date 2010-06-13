@@ -19,6 +19,14 @@ do { \
 
 #define XML_DEBUG 0
 
+#if XML_DEBUG
+#define WHERESTR    " at %s line %d.\n"
+#define WHEREARG    __FILE__, __LINE__
+#define debug(...)   do{ fprintf(stderr, __VA_ARGS__); fprintf(stderr, WHERESTR, WHEREARG); } while(0)
+#else
+#define debug(...)
+#endif
+
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents);
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents) {
 	unsigned char counts[256];

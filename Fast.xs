@@ -39,6 +39,8 @@ typedef struct {
 	HV ** hchain;
 	HV  * hcurrent;
 	SV  * ctag;
+	SV  * pi;
+	
 	SV  * attrname;
 	SV  * attrval;
 	SV  * textval;
@@ -155,6 +157,22 @@ void on_text(void * pctx, char * data,unsigned int length, unsigned int concat) 
 	hv_store_a( ctx->hcurrent, ctx->text, ctx->textval );
 	ctx->textval = 0;
 }
+
+void on_pi_open(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_tag_open");
+	parsestate *ctx = pctx;
+	printf("PI!\n");
+	ctx->pi = newSVpvn(data,length);
+}
+
+void on_pi_close(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_tag_open");
+	parsestate *ctx = pctx;
+	//SvREFCNT_dec(ctx->pi);
+	sv_2mortal(ctx->pi);
+	ctx->pi = 0;
+}
+
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_tag_open");
@@ -293,16 +311,17 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 		croak("Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
 	}
 	SV **key;
-	if( ctx->attr ) {
-		/*
-		Refactor
-		*/
-		ctx->attrname = newSV(0);
-		sv_copypv(ctx->attrname,ctx->attr);
-		sv_catpvn(ctx->attrname, data, length);
-		//ctx->attrname = newSVpnv(ctx->attrv,ctx->attrl);
+	if (ctx->pi) {
+		ctx->attrname = newSVpvn(data,length);
 	} else {
-		ctx->attrname = newSVpvn(data, length);
+		if( ctx->attr ) {
+			ctx->attrname = newSV(0);
+			sv_copypv(ctx->attrname, ctx->attr);
+			sv_catpvn(ctx->attrname, data, length);
+			//ctx->attrname = newSVpnv(ctx->attrv,ctx->attrl);
+		} else {
+			ctx->attrname = newSVpvn(data, length);
+		}
 	}
 }
 
@@ -331,9 +350,15 @@ void on_attr_val(void * pctx, char * data,unsigned int length) {
 		ctx->attrval = newSVpvn(data, length);
 	}
 	xml_sv_decode(ctx,ctx->attrval);
-	hv_store_a(ctx->hcurrent, ctx->attrname, ctx->attrval);
-	sv_2mortal(ctx->attrname);
-	//sv_2mortal(ctx->attrval);
+	if (ctx->pi) {
+		printf("PI %s, attr %s='%s'\n",SvPV_nolen(ctx->pi), SvPV_nolen(ctx->attrname),SvPV_nolen(ctx->attrval) );
+		sv_2mortal(ctx->attrval);
+		sv_2mortal(ctx->attrname);
+	} else {
+		hv_store_a(ctx->hcurrent, ctx->attrname, ctx->attrval);
+		sv_2mortal(ctx->attrname);
+		//sv_2mortal(ctx->attrval);
+	}
 	ctx->attrname = 0;
 	ctx->attrval = 0;
 }
@@ -483,6 +508,8 @@ _xml2hash(xml,conf)
 			ctx.depth = -1;
 			
 			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
+			state.cb.piopen      = on_pi_open;
+			state.cb.piclose     = on_pi_close;
 			state.cb.tagopen      = on_tag_open;
 			state.cb.tagclose     = on_tag_close;
 			state.cb.attrname     = on_attr_name;
