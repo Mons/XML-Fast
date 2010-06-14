@@ -35,6 +35,8 @@ typedef struct {
 	unsigned int len;
 } xml_node;
 
+typedef void (*xml_callback)(void *,char *, unsigned int, unsigned int);
+
 typedef struct {
 	void (*piopen)(void *,char *, unsigned int);
 	void (*piclose)(void *,char *, unsigned int);

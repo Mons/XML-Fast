@@ -5,11 +5,24 @@ use warnings qw(internal);
 use Data::Dumper;
 use ExtUtils::testlib;
 use XML::Fast;
+use XML::Bare;
+use XML::Hash::LX ();
 use Devel::Leak;
 my $handle;
 my $data;
+=for rem
+say dumper(XML::Hash::LX::xml2hash( q{<?xml version="1.0" encoding="cp1251" ?>
+<!DOCTYPE test1 [
+	<!ENTITY copy "&#38;#60;" >
+]>
+<test> &#x2622; &amp;'&#x44b;'+'&#1099;'+&copy;</test>} ));
+exit;
+say dumper( XML::Bare->new(text => '<text>&amp;</text>')->parse );
+__END__
+=cut
 #XML::Fast::xml2hash('<!-- test -->');
-#__END__
+
+#=cut
 #Devel::Leak::NoteSV( $handle);
 #XML::Fast::_test();
 #Devel::Leak::CheckSV($handle);
@@ -41,6 +54,12 @@ my $xml3 = q{
 		</nest>
 	</root>
 };
+my $xml4 = q{
+	<root at="nb:&lt - &lt; - &#9762; - bad:&#?; - bad:&#x?; - &#x2622 - &gt;">
+		nb:&lt - &lt; - &#9762; - bad:&#?; - bad:&#x?; - &#x2622 - &gt;
+	</root>
+	
+};
 my $bigxml;
 {
 no utf8;
@@ -68,6 +87,10 @@ $bigxml = "<?xml version=\"1.0\"?>".
 			"</test1 >\n";
 }
 if (1){
+say dumper(
+	XML::Fast::xml2hash($xml4, join => undef)
+);
+exit if $ARGV[0] eq 'dump5';
 say dumper(
 	XML::Fast::xml2hash($xml2, trim => 0, join => undef)
 );

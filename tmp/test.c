@@ -685,6 +685,7 @@ int main () {
 	//init_entities();
 	//return 0;
 	printf("ok\n");
+	return;
 	char *xml;
 	xml_callbacks cbs;
 	memset(&cbs,0,sizeof(xml_callbacks));
