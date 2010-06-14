@@ -25,11 +25,13 @@ typedef struct {
 	unsigned int bytes;
 	unsigned int utf8upgrade;
 	unsigned int utf8decode;
+	unsigned int arrays;
 	SV  * attr;
 	SV  * text;
 	SV  * join;
 	SV  * cdata;
 	SV  * comm;
+	HV  * array;
 
 	// state
 	char *encoding;
@@ -74,6 +76,23 @@ typedef struct {
 			} \
 		} else { \
 			hv_store(hv, kv, kl, sv, 0); \
+		} \
+	} STMT_END
+
+#define hv_store_aa( hv, key, sv ) \
+	STMT_START { \
+		SV **exists; \
+		char *kv = SvPV_nolen(key); \
+		int   kl = SvCUR(key); \
+		if( ( exists = hv_fetch(hv, kv, kl, 0) ) && SvROK(*exists) && (SvTYPE( SvRV(*exists) ) == SVt_PVAV) ) { \
+			AV *av = (AV *) SvRV( *exists ); \
+			/* printf("push '%s' to array in key '%s'\n", SvPV_nolen(old), kv); */ \
+			av_push( av, sv ); \
+		} \
+		else { \
+			AV *av   = newAV(); \
+			av_push( av, sv ); \
+			hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
 		} \
 	} STMT_END
 
@@ -281,7 +300,15 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			//printf("Tag %s have no keys\n", SvPV_nolen(tag));
 			SvREFCNT_dec(hv);
 			SV *sv = newSVpvn("",0);
-			hv_store_a(ctx->hcurrent, tag, sv);
+			if (ctx->arrays) {
+				hv_store_aa(ctx->hcurrent, tag, sv);
+			}
+			else if (ctx->array && (hv_exists(ctx->array, data,length ) )) {
+				hv_store_aa(ctx->hcurrent, tag, sv);
+			}
+			else {
+				hv_store_a(ctx->hcurrent, tag, sv);
+			}
 		}
 		else
 		if (keys == 1 && svtext) {
@@ -290,12 +317,34 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			SvREFCNT_inc(svtext);
 			SvREFCNT_dec(hv);
 			//hv_store(ctx->hcurrent, data, length, svtext, 0);
-			hv_store_a(ctx->hcurrent, tag, svtext);
+			if (ctx->arrays) {
+				//printf("Cast %s as array (all should be)\n",SvPV_nolen(tag));
+				hv_store_aa(ctx->hcurrent, tag, svtext);
+			}
+			else if (ctx->array && (hv_exists(ctx->array, data,length ) )) {
+				//printf("Cast %s as array\n",SvPV_nolen(tag));
+				hv_store_aa(ctx->hcurrent, tag, svtext);
+			}
+			else {
+				hv_store_a(ctx->hcurrent, tag, svtext);
+			}
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
+			SV **ary;
 			//printf("Store hash into RV '%lx'\n",sv);
 			//hv_store(ctx->hcurrent, data, length, sv, 0);
-			hv_store_a(ctx->hcurrent, tag, sv);
+			//printf("Check %s to be array\n",SvPV_nolen(tag));
+			if (ctx->arrays) {
+				//printf("Cast %s as array (all should be)\n",SvPV_nolen(tag));
+				hv_store_aa(ctx->hcurrent, tag, sv);
+			}
+			else if (ctx->array && ( hv_exists(ctx->array, data,length ) )) {
+				//printf("Cast %s as array\n",SvPV_nolen(tag));
+				hv_store_aa(ctx->hcurrent, tag, sv);
+			}
+			else {
+				hv_store_a(ctx->hcurrent, tag, sv);
+			}
 		}
 		if (svtext) SvREFCNT_dec(svtext);
 	} else {
@@ -477,6 +526,36 @@ _xml2hash(xml,conf)
 		if ((key = hv_fetch(conf, "comm", 4, 0)) && SvPOK(*key)) {
 			ctx.comm = *key;
 		}
+		if ((key = hv_fetch(conf, "array", 5, 0)) && SvOK(*key)) {
+			if (SvROK(*key) && SvTYPE( SvRV(*key) ) == SVt_PVAV) {
+				AV *av = (AV *) SvRV( *key );
+				ctx.array = newHV();
+				//SV *array_container = newRV_noinc( (SV *)ctx.array );
+				//sv_2mortal(array_container);
+				I32 len = 0, avlen = av_len(av) + 1;
+				SV **val;
+				for ( len = 0; len < avlen; len++ ) {
+					if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
+						if(SvPOK(*val)) {
+							//printf("Remember %s should be array\n",SvPV_nolen(*val));
+							hv_store( ctx.array, SvPV_nolen(*val), SvCUR(*val), newSV(0), 0 );
+						} else {
+							croak("Bad enrty in array antry: %s",SvPV_nolen(*val));
+						}
+					}
+				}
+				
+				
+			}
+			else if (!SvROK(*key)) {
+				//printf("Remember all should be arrays\n");
+				ctx.arrays = SvTRUE(*key) ? 1 : 0;
+			}
+			else {
+				croak("Bad entry in array: %s",SvPV_nolen(*key));
+			}
+		}
+		
 		
 		if ((key = hv_fetch(conf, "_max_depth", 10, 0)) && SvOK(*key)) {
 			ctx.chainsize = SvIV(*key);

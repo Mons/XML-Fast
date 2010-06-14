@@ -263,7 +263,6 @@ or diag explain($data),"\n";
 	or diag explain($data),"\n";
 }
 {
-	$TODO = 'Not implemented yet';
 	is_deeply
 		$data = xml2hash($xml1, array => ['root']),
 		{root => [{'-at' => 'key',nest => {'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}}]},
@@ -271,7 +270,6 @@ or diag explain($data),"\n";
 	or diag explain($data),"\n";
 }
 {
-	$TODO = 'Not implemented yet';
 	is_deeply
 		$data = xml2hash($xml1, array => ['nest']),
 		{root => {'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => '',v => ['a',{'-at' => 'a','#text' => 'b'}]}]}},
@@ -279,7 +277,6 @@ or diag explain($data),"\n";
 	or diag explain($data),"\n";
 }
 {
-	$TODO = 'Not implemented yet';
 	is_deeply
 		$data = xml2hash($xml1, array => 1),
 		{root => [{'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => [''],v => ['a',{'-at' => 'a','#text' => 'b'}]}]}]},
