@@ -218,7 +218,6 @@ void on_cdata(void * pctx, char * data,unsigned int length) {
 void on_pi_open(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_tag_open");
 	parsestate *ctx = pctx;
-	printf("PI!\n");
 	ctx->pi = newSVpvn(data,length);
 }
 
@@ -433,6 +432,16 @@ void on_warn(char * format, ...) {
 	va_end(va);
 }
 
+void on_die(char * format, ...) {
+	//if (!pctx) croak("Context not passed");
+	va_list va;
+	va_start(va,format);
+	SV *text = sv_2mortal(newSVpvn("",0));
+	sv_vcatpvf(text, format, &va);
+	croak("%s",SvPV_nolen(text));
+	va_end(va);
+}
+
 SV * find_encoding(char * encoding) {
 	dSP;
 	int count;
@@ -490,6 +499,9 @@ _test()
 */
 
 MODULE = XML::Fast		PACKAGE = XML::Fast
+
+BOOT:
+	init_entities();
 
 SV*
 _xml2hash(xml,conf)
@@ -610,13 +622,12 @@ _xml2hash(xml,conf)
 			state.cb.tagclose     = on_tag_close;
 			
 			state.cb.attrname     = on_attr_name;
-			//state.cb.attrvalpart  = on_attr_val_part;
-			//state.cb.attrval      = on_attr_val;
 			if ((key = hv_fetch(conf, "nowarn", 6, 0)) && SvTRUE(*key)) {
 				//
 			} else {
 				state.cb.warn         = on_warn;
 			}
+			state.cb.die         = on_die;
 			
 			if(ctx.comm)
 				state.cb.comment      = on_comment;

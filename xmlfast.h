@@ -95,6 +95,7 @@ static entity entitydef[] = {
 	,{ "quot",   "\"" }
 };
 
+extern void init_entities();
 extern void parse (char * xml, parser_state * state);
 
 #endif

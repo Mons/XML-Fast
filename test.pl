@@ -91,6 +91,10 @@ $bigxml = "<?xml version=\"1.0\"?>".
 }
 if (1){
 say dumper(
+	XML::Fast::xml2hash(q{<test></test></test>}, join => undef)
+);
+exit if $ARGV[0] eq 'f1';
+say dumper(
 	XML::Fast::xml2hash($xml4, join => undef)
 );
 exit if $ARGV[0] eq 'dump5';
@@ -136,6 +140,7 @@ Devel::Leak::NoteSV($handle);
 
 for (1..5) {
 #=for rem
+	XML::Fast::xml2hash($bigxml, array => 1);
 	XML::Fast::xml2hash($bigxml);
 	XML::Fast::xml2hash($bigxml, join => undef);
 	XML::Fast::xml2hash($bigxml, join => '');
