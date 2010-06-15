@@ -44,7 +44,6 @@ typedef struct {
 	SV  * pi;
 	
 	SV  * attrname;
-	SV  * attrval;
 	SV  * textval;
 	
 } parsestate;
@@ -146,35 +145,74 @@ void on_comment(void * pctx, char * data,unsigned int length) {
 	hv_store_a(ctx->hcurrent, ctx->comm, sv );
 }
 
-void on_cdata(void * pctx, char * data,unsigned int length, unsigned int nothing) {
-	if (!pctx) croak("Context not passed to on_cdata");
-	parsestate *ctx = pctx;
-	SV *sv   = newSVpvn(data, length);
-	xml_sv_decode(ctx,sv);
-	hv_store_a(ctx->hcurrent, ctx->cdata, sv );
-}
-
-void on_text_part(void * pctx, char * data, unsigned int length) {
+void on_uchar(void * pctx, wchar_t chr) {
 	if (!pctx) croak("Context not passed to on_text_part");
 	parsestate *ctx = pctx;
+	// TODO: how to define where to store: either text or attribute
+	char *start, *end;
+	STRLEN len = 0;
 	if (ctx->textval) {
-		if (length > 0 ) { sv_catpvn(ctx->textval, data, length); }
+		len = SvCUR(ctx->textval);
 	} else {
-		ctx->textval = newSVpvn(data, length);
+		ctx->textval = newSVpvn("",0);
 	}
+	sv_grow(ctx->textval, len + UTF8_MAXBYTES+1 );
+	start = end = SvEND(ctx->textval);
+	//printf("Got string (%p) start=%p\n",SvPVX(ctx->textval),start);
+	end = uvchr_to_utf8(start, chr);
+	*end = '\0';
+	SvCUR_set(ctx->textval,len + end - start);
+	//printf("appended uchar: %s[%d] (%s) [%d+%d]\n",SvPV_nolen(ctx->textval), SvCUR(ctx->textval), start, len, end - start);
 }
 
-void on_text(void * pctx, char * data,unsigned int length, unsigned int concat) {
-	if (!pctx) croak("Context not passed to on_text");
+void on_bytes_part(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_bytes_part");
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
 		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
 	} else {
 		ctx->textval = newSVpvn(data, length);
 	}
+	//hv_store_a( ctx->hcurrent, ctx->text, ctx->textval );
+	//ctx->textval = 0;
+}
+
+void on_bytes(void * pctx, char * data, unsigned int length) {
+	if (!pctx) croak("Context not passed to on_bytes");
+	parsestate *ctx = pctx;
+	if (!ctx->textval && !length) {
+		warn("Called on_bytes with empty text and empty body");
+	}
+	if (ctx->textval) {
+		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
+	} else {
+		ctx->textval = newSVpvn(data, length);
+	}
 	xml_sv_decode(ctx,ctx->textval);
-	hv_store_a( ctx->hcurrent, ctx->text, ctx->textval );
+	if (ctx->attrname) {
+		if (ctx->pi) {
+			printf("PI %s, attr %s='%s'\n",SvPV_nolen(ctx->pi), SvPV_nolen(ctx->attrname),SvPV_nolen(ctx->textval) );
+			sv_2mortal(ctx->textval);
+		} else {
+			hv_store_a(ctx->hcurrent, ctx->attrname, ctx->textval);
+		}
+		sv_2mortal(ctx->attrname);
+		ctx->attrname = 0;
+		ctx->textval = 0;
+	}
+	else {
+		hv_store_a(ctx->hcurrent, ctx->text, ctx->textval);
+	}
 	ctx->textval = 0;
+}
+
+
+void on_cdata(void * pctx, char * data,unsigned int length) {
+	if (!pctx) croak("Context not passed to on_cdata");
+	parsestate *ctx = pctx;
+	SV *sv   = newSVpvn(data, length);
+	xml_sv_decode(ctx,sv);
+	hv_store_a(ctx->hcurrent, ctx->cdata, sv );
 }
 
 void on_pi_open(void * pctx, char * data, unsigned int length) {
@@ -192,10 +230,14 @@ void on_pi_close(void * pctx, char * data, unsigned int length) {
 	ctx->pi = 0;
 }
 
-
 void on_tag_open(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_tag_open");
 	parsestate *ctx = pctx;
+	if (ctx->textval) {
+		xml_sv_decode(ctx,ctx->textval);
+		hv_store_a(ctx->hcurrent, ctx->text, ctx->textval);
+		ctx->textval = 0;
+	}
 	HV * hv = newHV();
 	//SV *sv = newRV_noinc( (SV *) hv );
 	//hv_store(ctx->hcurrent, data, length, sv, 0);
@@ -223,6 +265,11 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	SV **text;
 	I32 keys = HvKEYS(ctx->hcurrent);
 	SV  *svtext = 0;
+	if (ctx->textval) {
+		xml_sv_decode(ctx,ctx->textval);
+		hv_store_a(ctx->hcurrent, ctx->text, ctx->textval);
+		ctx->textval = 0;
+	}
 	if (ctx->text) {
 		// we may have stored text node
 		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
@@ -356,6 +403,9 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 void on_attr_name(void * pctx, char * data,unsigned int length) {
 	if (!pctx) croak("Context not passed to on_attr_name");
 	parsestate *ctx = pctx;
+	if (ctx->textval) {
+		croak("Have textval=%s, while called attrname\n",SvPV_nolen(ctx->textval));
+	}
 	if (ctx->attrname) {
 		croak("Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
 	}
@@ -364,52 +414,13 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 		ctx->attrname = newSVpvn(data,length);
 	} else {
 		if( ctx->attr ) {
-			ctx->attrname = newSV(0);
+			ctx->attrname = newSV(length + SvCUR(ctx->attr));
 			sv_copypv(ctx->attrname, ctx->attr);
 			sv_catpvn(ctx->attrname, data, length);
-			//ctx->attrname = newSVpnv(ctx->attrv,ctx->attrl);
 		} else {
 			ctx->attrname = newSVpvn(data, length);
 		}
 	}
-}
-
-void on_attr_val_part(void * pctx, char * data,unsigned int length) {
-	if (!pctx) croak("Context not passed to on_attr_val_part");
-	parsestate *ctx = pctx;
-	if(!ctx->attrname) {
-		croak("Got attrval without attrname\n");
-	}
-	if (ctx->attrval) {
-		sv_catpvn(ctx->attrval, data, length);
-	} else {
-		ctx->attrval = newSVpvn(data, length);
-	}
-}
-
-void on_attr_val(void * pctx, char * data,unsigned int length) {
-	if (!pctx) croak("Context not passed to on_attr_val");
-	parsestate *ctx = pctx;
-	if(!ctx->attrname) {
-		croak("Got attrval without attrname\n");
-	}
-	if (ctx->attrval) {
-		sv_catpvn(ctx->attrval, data, length);
-	} else {
-		ctx->attrval = newSVpvn(data, length);
-	}
-	xml_sv_decode(ctx,ctx->attrval);
-	if (ctx->pi) {
-		printf("PI %s, attr %s='%s'\n",SvPV_nolen(ctx->pi), SvPV_nolen(ctx->attrname),SvPV_nolen(ctx->attrval) );
-		sv_2mortal(ctx->attrval);
-		sv_2mortal(ctx->attrname);
-	} else {
-		hv_store_a(ctx->hcurrent, ctx->attrname, ctx->attrval);
-		sv_2mortal(ctx->attrname);
-		//sv_2mortal(ctx->attrval);
-	}
-	ctx->attrname = 0;
-	ctx->attrval = 0;
 }
 
 void on_warn(char * format, ...) {
@@ -485,6 +496,12 @@ _xml2hash(xml,conf)
 		char *xml;
 		HV *conf;
 	CODE:
+		/*UV unicode = 0x2622;
+		U8 chr[UTF8_MAXBYTES];
+		U8 *end = uvchr_to_utf8(chr, unicode);
+		*end = '\0';
+		croak("utf test=%s (len=%d, max=%d)\n", chr, end - chr, UTF8_MAXBYTES);*/
+		
 		parser_state state;
 		memset(&state,0,sizeof(state));
 		
@@ -591,9 +608,10 @@ _xml2hash(xml,conf)
 			state.cb.piclose     = on_pi_close;
 			state.cb.tagopen      = on_tag_open;
 			state.cb.tagclose     = on_tag_close;
+			
 			state.cb.attrname     = on_attr_name;
-			state.cb.attrvalpart  = on_attr_val_part;
-			state.cb.attrval      = on_attr_val;
+			//state.cb.attrvalpart  = on_attr_val_part;
+			//state.cb.attrval      = on_attr_val;
 			if ((key = hv_fetch(conf, "nowarn", 6, 0)) && SvTRUE(*key)) {
 				//
 			} else {
@@ -606,11 +624,12 @@ _xml2hash(xml,conf)
 			if(ctx.cdata)
 				state.cb.cdata        = on_cdata;
 			else if(ctx.text)
-				state.cb.cdata        = on_text;
+				state.cb.cdata        = on_bytes;
 			
 			if(ctx.text) {
-				state.cb.text         = on_text;
-				state.cb.textpart     = on_text_part;
+				state.cb.bytes        = on_bytes;
+				state.cb.bytespart    = on_bytes_part;
+				state.cb.uchar        = on_uchar;
 			}
 			
 			if (!ctx.trim)

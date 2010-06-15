@@ -41,15 +41,14 @@ typedef struct {
 	void (*piopen)(void *,char *, unsigned int);
 	void (*piclose)(void *,char *, unsigned int);
 	void (*comment)(void *,char *, unsigned int);
-	void (*cdata)(void *,char *, unsigned int, unsigned int);
-	void (*text)(void *,char *, unsigned int, unsigned int);
-	void (*textpart)(void *,char *, unsigned int);
-	void (*wsp)(void *,char *, unsigned int, unsigned int);
+	void (*cdata)(void *,char *, unsigned int);
 	void (*tagopen)(void *,char *, unsigned int);
 	void (*attrname)(void *,char *, unsigned int);
-	void (*attrvalpart)(void *,char *, unsigned int);
-	void (*attrval)(void *,char *, unsigned int);
 	void (*tagclose)(void *,char *, unsigned int);
+	void (*bytespart)(void *, char *, unsigned int);
+	void (*bytes)(void *, char *, unsigned int);
+	void (*uchar)(void *, wchar_t);
+
 	void (*warn)(char *, ...);
 	void (*die)(char *, ...);
 } xml_callbacks;

@@ -132,28 +132,7 @@ static char * eatback_wsp(parser_state * context, char *p) {
 	}
 }
 
-static char utf8(wchar_t chr,char *xx) {
-				if (chr < 0x0080 ) {
-					xx[0] = (char)chr;
-					xx[1] = 0;
-					return 1;
-				}
-				else if (chr < 0x0800) {
-					xx[0] = (char) ( 0xc0 | (chr >> 6) );
-					xx[1] = (char) ( 0x80 | (chr & 0x3f) );
-					xx[2] = 0;
-					return 2;
-				}
-				else {
-					xx[0] = (char) ( 0xe0 | ( chr >> 12 ) );
-					xx[1] = (char) ( 0x80 | (( chr >> 6 ) & 0x3f ) );
-					xx[2] = (char) ( 0x80 | (chr & 0x3f ) );
-					xx[3] = 0;
-					return 3;
-				}
-}
-
-char *parse_entity (parser_state * context, char *p, void (*cb)(void *,char *, unsigned int)) {
+char *parse_entity (parser_state * context, char *p) {
 	//return p+1;
 	struct entityref *cur_ent, *last_ent;
 	char *at;
@@ -191,16 +170,18 @@ char *parse_entity (parser_state * context, char *p, void (*cb)(void *,char *, u
 					chr += (*p++ - '0');
 				}
 			}
-			if (chr > 0) {
-				if ( *p == ';' ) p++;
-				char sym[4];
-				int len;
-				len = utf8(chr,sym);
-				//printf("Got result = %d (%s) (%s)\n",chr,utf[chr],sym);
-				if (cb) cb(context->ctx, sym, len);
+			if ( *p == ';' ) p++;
+			if (chr > 0 && chr <= 0xFFFF) {
+				if (context->cb.uchar) context->cb.uchar(context->ctx, chr);
 			} else {
 				//printf("Bad entity\n");
-				if (cb) cb(context->ctx, at, p - at);
+				if (context->cb.warn) {
+					char back = *p;
+					*p = 0;
+					context->cb.warn("Bad entity value %s",at);
+					*p = back;
+				}
+				if (context->cb.bytespart) context->cb.bytespart(context->ctx, at, p - at);
 			}
 			return p;
 	}
@@ -240,14 +221,12 @@ char *parse_entity (parser_state * context, char *p, void (*cb)(void *,char *, u
 		}
 	no_ent:
 	if (p == at) p++;
-	if (cb && p > at)
-		cb(context->ctx, at, p-at);
+	if (context->cb.bytespart) context->cb.bytespart(context->ctx, at, p - at);
 	//p = at;
 	return p;
 	
 	ret:
-	if (cb)
-		cb(context->ctx, cur_ent->entity, cur_ent->length);
+	if (context->cb.bytespart) context->cb.bytespart(context->ctx, cur_ent->entity, cur_ent->length);
 	
 	return p;
 }
@@ -335,15 +314,15 @@ char *parse_attrs(char *p, parser_state * context) {
 								if (*p == wait) {  // got close quote
 									//printf("\tgot close quote <%c>\n",*p);
 									state = 0;
-									if(cb->attrval) cb->attrval( ctx, at, p - at );
+									if(cb->bytes) cb->bytes( ctx, at, p - at );
 									p = eat_wsp(context, p+1);
 									break;
 								}
 							case '&':
 								if (wait) {
 									//printf("Got entity begin (%s)\n",buffer);
-									if (p > at && cb->attrvalpart) cb->attrvalpart( ctx, at, p - at );
-									if( p = parse_entity(context, p, cb->attrvalpart) ) {
+									if (p > at && cb->bytespart) cb->bytespart( ctx, at, p - at );
+									if( p = parse_entity(context, p) ) {
 										at = p;
 										break;
 									}
@@ -430,7 +409,7 @@ void parse (char * xml, parser_state * context) {
 							search = strstr(p,"]]>");
 							if (search) {
 								if (cb->cdata) {
-									cb->cdata( ctx, p, search - p, 0 );
+									cb->cdata( ctx, p, search - p);
 								}
 								p = search + 3;
 							} else xml_error("Cdata node not terminated");
@@ -704,11 +683,11 @@ void parse (char * xml, parser_state * context) {
 								} else {
 									lastwsp = p;
 								}
-								if(cb->text) {
+								if(cb->bytes) {
 									if (lastwsp  > at) {
-										cb->text(ctx, at, lastwsp - at, concat++ );
+										cb->bytes(ctx, at, lastwsp - at );
 									} else {
-										cb->text(ctx, "", 0, concat++ ); // we need a terminator
+										cb->bytes(ctx, "", 0 ); // we need a terminator
 									}
 								}
 							} else {
@@ -728,8 +707,8 @@ void parse (char * xml, parser_state * context) {
 							textstate = TEXT_DATA;
 							if (*p == '&') {
 								if (XML_DEBUG) printf("TEXT_READ -> parse_entity, concat = %d\n",concat);
-								if (p > at && cb->textpart) cb->textpart(ctx, at, p - at);
-								if( p = parse_entity(context,p,cb->textpart) ) {
+								if (p > at && cb->bytespart) cb->bytespart(ctx, at, p - at);
+								if( p = parse_entity(context,p) ) {
 									at = p;
 									if (XML_DEBUG) printf("TEXT_READ -> entity callback done, concat = %d, next='%c'\n",concat,*p);
 									break;

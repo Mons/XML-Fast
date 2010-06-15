@@ -60,6 +60,9 @@ my $xml4 = q{
 	</root>
 	
 };
+my $xml5 = q{
+	<root>&#9762;<sub />&#x2622</root>
+};
 my $bigxml;
 {
 no utf8;
@@ -91,6 +94,10 @@ say dumper(
 	XML::Fast::xml2hash($xml4, join => undef)
 );
 exit if $ARGV[0] eq 'dump5';
+say dumper(
+	XML::Fast::xml2hash($xml5, join => undef)
+);
+exit if $ARGV[0] eq 'dump6';
 say dumper(
 	XML::Fast::xml2hash($xml2, trim => 0, join => undef)
 );
