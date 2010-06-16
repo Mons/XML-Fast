@@ -11,6 +11,16 @@
 #include <string.h>
 #include <strings.h>
 
+#ifndef ptr_t
+typedef void * ptr_t;
+#endif
+
+typedef struct {
+	char *name;
+	char *fullname;
+	unsigned int len;
+} xml_node;
+
 /*
 commit 30866c9f74d890c45e8da27ea855468a314a59cf
 xmlbare 1785/s      --    -19%
@@ -38,6 +48,9 @@ typedef struct {
 	SV   *encode;
 	int depth;
 	unsigned int chainsize;
+	xml_node * chain;
+	SV ** name;
+	SV ** fullname;
 	HV ** hchain;
 	HV  * hcurrent;
 	SV  * ctag;
@@ -45,6 +58,8 @@ typedef struct {
 	
 	SV  * attrname;
 	SV  * textval;
+	
+	SV  * error;
 	
 } parsestate;
 
@@ -216,13 +231,13 @@ void on_cdata(void * pctx, char * data,unsigned int length) {
 }
 
 void on_pi_open(void * pctx, char * data, unsigned int length) {
-	if (!pctx) croak("Context not passed to on_tag_open");
+	if (!pctx) croak("Context not passed to on_pi_open");
 	parsestate *ctx = pctx;
 	ctx->pi = newSVpvn(data,length);
 }
 
 void on_pi_close(void * pctx, char * data, unsigned int length) {
-	if (!pctx) croak("Context not passed to on_tag_open");
+	if (!pctx) croak("Context not passed to on_pi_close");
 	parsestate *ctx = pctx;
 	//SvREFCNT_dec(ctx->pi);
 	sv_2mortal(ctx->pi);
@@ -243,24 +258,38 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 	ctx->depth++;
 	if (ctx->depth >= ctx->chainsize) {
 		warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
-		HV ** keep = ctx->hchain;
-		ctx->hchain = safemalloc( sizeof(ctx->hcurrent) * ctx->chainsize * 2);
-		memcpy(ctx->hchain, keep, sizeof(ctx->hcurrent) * ctx->chainsize * 2);
 		ctx->chainsize *= 2;
-		safefree(keep);
+		ctx->hchain     = saferealloc( ctx->hchain,   sizeof(ptr_t) * ctx->chainsize );
+		ctx->fullname   = saferealloc( ctx->fullname, sizeof(ptr_t) * ctx->chainsize );
+		ctx->name       = saferealloc( ctx->fullname, sizeof(ptr_t) * ctx->chainsize );
 	}
+	SV *fname;
+	if (ctx->depth == 0) {
+		fname = newSVpvn("",0);
+	} else {
+		fname = newSV(SvCUR(ctx->fullname[ctx->depth - 1]) + length+2 );
+		sv_copypv( fname,ctx->fullname[ctx->depth - 1] );
+	}
+	sv_catpvn_nomg(fname, "/",1);
+	sv_catpvn_nomg(fname, data, length);
+	sv_2mortal(fname);
+
+	ctx->name[ ctx->depth ] = sv_2mortal(newSVpvn(data,length));
+	ctx->fullname[ ctx->depth ] = fname;
+	//printf("node name=%s, fullname=%s\n", SvPV_nolen(ctx->name[ ctx->depth ]),SvPV_nolen(fname));
 	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
 	//node_depth++;
 	//node_chain[node_depth] = collect;
 	ctx->hcurrent = hv;
 }
 
+void on_tag_close(void * pctx, char * data, unsigned int length);
 void on_tag_close(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_tag_close");
 	parsestate *ctx = pctx;
 	// TODO: check node name
+	SV *tag = sv_2mortal(newSVpvn(data,length));
 	
-	// Text joining
 	SV **text;
 	I32 keys = HvKEYS(ctx->hcurrent);
 	SV  *svtext = 0;
@@ -269,6 +298,32 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		hv_store_a(ctx->hcurrent, ctx->text, ctx->textval);
 		ctx->textval = 0;
 	}
+	if (ctx->depth < 0) {
+		warn("Ignore unbalanced tag: closed upper than root");
+		return;
+	}
+	if (!sv_eq( ctx->name[ctx->depth],tag)) {
+		int close, depth = ctx->depth;
+		warn ("Unbalanced close tag '%s' (current=%s), depth=%d\n", SvPV_nolen(tag), SvPV_nolen(ctx->name[ctx->depth]),depth);
+		while (depth > 0) {
+			if (sv_eq( ctx->name[depth], tag )) {
+				printf("Found early opened node at depth %d\n",depth);
+				for (close = ctx->depth; close >= depth; close--) {
+					printf("Auto close %s (current=%s) at depth %d\n",SvPV_nolen( ctx->name[close] ), SvPV_nolen(ctx->name[ctx->depth]), close);
+					on_tag_close(pctx, SvPV_nolen( ctx->name[close] ), SvCUR(ctx->name[close]));
+				}
+				depth = -1;
+				break;
+			}
+			//printf("Close %s\n",SvPV_nolen( ctx->name[depth] ));
+			depth--;
+		}
+		if (depth != -1) {
+			warn("Found no open tag for %s. Ignored", SvPV_nolen(tag));
+		}
+		return;
+	}
+	// Text joining
 	if (ctx->text) {
 		// we may have stored text node
 		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
@@ -335,8 +390,6 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	}
 	//printf("svtext=(0x%lx) '%s'\n", svtext, svtext ? SvPV_nolen(svtext) : "");
 	// Text joining
-	SV *tag = newSVpvn(data,length);
-	sv_2mortal(tag);
 	if (ctx->depth > -1) {
 		HV *hv = ctx->hcurrent;
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
@@ -422,8 +475,9 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 	}
 }
 
-void on_warn(char * format, ...) {
-	//if (!pctx) croak("Context not passed");
+void on_warn(void * pctx, char * format, ...) {
+	parsestate *ctx = pctx;
+	if (!pctx) croak("Context not passed");
 	va_list va;
 	va_start(va,format);
 	SV *text = sv_2mortal(newSVpvn("",0));
@@ -432,13 +486,14 @@ void on_warn(char * format, ...) {
 	va_end(va);
 }
 
-void on_die(char * format, ...) {
-	//if (!pctx) croak("Context not passed");
+void on_die(void * pctx, char * format, ...) {
+	parsestate *ctx = pctx;
+	if (!pctx) croak("Context not passed");
 	va_list va;
 	va_start(va,format);
-	SV *text = sv_2mortal(newSVpvn("",0));
-	sv_vcatpvf(text, format, &va);
-	croak("%s",SvPV_nolen(text));
+	ctx->error = sv_2mortal(newSVpvn("",0));
+	sv_vcatpvf(ctx->error, format, &va);
+	warn("got a die with %s",SvPV_nolen(ctx->error));
 	va_end(va);
 }
 
@@ -612,8 +667,10 @@ _xml2hash(xml,conf)
 		} else{
 			ctx.hcurrent = newHV();
 			
-			ctx.hchain = safemalloc( sizeof(ctx.hcurrent) * ctx.chainsize);
-			ctx.depth = -1;
+			ctx.name     = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			ctx.fullname = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			ctx.hchain   = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			ctx.depth    = -1;
 			
 			RETVAL  = newRV_noinc( (SV *) ctx.hcurrent );
 			state.cb.piopen      = on_pi_open;
@@ -649,6 +706,11 @@ _xml2hash(xml,conf)
 		parse(xml,&state);
 		if(ctx.encode) SvREFCNT_dec(ctx.encode);
 		safefree(ctx.hchain);
+		safefree(ctx.fullname);
+		safefree(ctx.name);
+		if (ctx.error) {
+			croak("%s", SvPV_nolen(ctx.error));
+		}
 	OUTPUT:
 		RETVAL
 

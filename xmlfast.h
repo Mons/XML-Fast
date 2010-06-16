@@ -30,11 +30,6 @@ typedef struct {
 	char *value;
 } xml_attr;
 
-typedef struct {
-	char *name;
-	unsigned int len;
-} xml_node;
-
 typedef void (*xml_callback)(void *,char *, unsigned int, unsigned int);
 
 typedef struct {
@@ -49,9 +44,16 @@ typedef struct {
 	void (*bytes)(void *, char *, unsigned int);
 	void (*uchar)(void *, wchar_t);
 
-	void (*warn)(char *, ...);
-	void (*die)(char *, ...);
+	void (*warn)(void *, char *, ...);
+	void (*die)(void *, char *, ...);
 } xml_callbacks;
+
+/*
+typedef struct {
+	char *name;
+	unsigned int len;
+} xml_node;
+*/
 
 typedef struct {
 	unsigned        line_number;
@@ -59,10 +61,11 @@ typedef struct {
 	unsigned int    save_wsp;
 	unsigned int    state;
 	
-	unsigned int    chain_size;
+/*	unsigned int    chain_size;
 	xml_node      * root;
 	xml_node      * chain;
 	int             depth;
+*/
 	
 	unsigned int    pathsize;
 	unsigned int    pathlen;

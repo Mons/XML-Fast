@@ -43,6 +43,22 @@ do { \
 #define TEXT_WSP      11
 #define DOCUMENT_ABORTED 12
 
+static char *STATE[DOCUMENT_ABORTED+1] = {
+	 "DOCUMENT_START"
+	,"LT_OPEN"
+	,"COMMENT_OPEN"
+	,"CDATA_OPEN"
+	,"PI"
+	,"CONTENT_WAIT"
+	,"TAG_OPEN"
+	,"TAG_CLOSE"
+	,"TEXT_READ"
+	,"TEXT_DATA"
+	,"TEXT_INITWSP"
+	,"TEXT_WSP"
+	,"DOCUMENT_ABORTED"
+};
+
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents);
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents) {
 	unsigned char counts[256];
@@ -167,7 +183,7 @@ static inline char *parse_entity (parser_state * context, char *p) {
 			if (context->cb.warn) {
 				char back = *p;
 				*p = 0;
-				context->cb.warn("Bad entity value %s",at);
+				context->cb.warn(context->ctx,"Bad entity value %s",at);
 				*p = back;
 			}
 			if (context->cb.bytespart) context->cb.bytespart(context->ctx, at, p - at);
@@ -206,6 +222,7 @@ static inline char *parse_entity (parser_state * context, char *p) {
 		return p;
 }
 
+/*
 static void print_chain (xml_node *chain, int depth) {
 	int i;
 	xml_node * node;
@@ -217,6 +234,7 @@ static void print_chain (xml_node *chain, int depth) {
 	}
 	printf("\n");
 }
+*/
 
 static inline char *parse_attrs(char *p, parser_state * context) {
 	void * ctx = context->ctx;
@@ -326,10 +344,11 @@ void parse (char * xml, parser_state * context) {
 	unsigned int state, len;
 	unsigned char textstate;
 	p = xml;
-	
+	/*
 	xml_node *seek, *reverse;
 	context->chain_size = 64;
 	context->root = context->chain = safemalloc( sizeof(xml_node) * context->chain_size );
+	*/
 	unsigned char node_closed;
 	struct entityref *entity;
 	unsigned int line;
@@ -421,10 +440,11 @@ void parse (char * xml, parser_state * context) {
 							debug("PI correctly closed\n");
 							p+=2;
 							if (cb->piclose) cb->piclose( context->ctx, at, end - at );
+							context->state = CONTENT_WAIT;
 							goto next;
 						} else {
 							if (context->cb.die)
-								context->cb.die("Processing instruction not terminated");
+								context->cb.die(context->ctx,"Processing instruction not terminated");
 							goto fault;
 						}
 					case '/': // </node>
@@ -436,9 +456,16 @@ void parse (char * xml, parser_state * context) {
 							p = search + 1;
 							search = eatback_wsp(context, search-1)+1;
 							len = search - at;
+							// DISABLE BALANCING
+							if(cb->tagclose) cb->tagclose(ctx, at, len);
+							context->state = CONTENT_WAIT;
+							goto next;
+							// DISABLE BALANCING
+/*
 							if (context->depth == 0) {
 								if (context->cb.warn)
-									context->cb.warn("Need to close tag upper than root. Ignored");
+									context->cb.warn(context->ctx,"Need to close tag upper than root. Ignored");
+								context->state = CONTENT_WAIT;
 								goto next;
 							}
 							if (strncmp(context->chain->name, at, len) == 0) {
@@ -457,40 +484,40 @@ void parse (char * xml, parser_state * context) {
 									seek--;
 									if (strncmp(seek->name, at, len) == 0) {
 										if (context->cb.warn)
-											context->cb.warn("Found early opened node %s",seek->name);
+											context->cb.warn(context->ctx,"Found early opened node %s",seek->name);
 										while(context->chain >= seek) {
 											if(cb->tagclose) cb->tagclose(ctx, context->chain->name, context->chain->len);
 											safefree(context->chain->name);
 											context->chain--;
 											context->depth--;
 										}
-										/*
 										//optional feature: auto-opening tags
-										for (seek = chain+2; seek <= reverse; seek++) {
-											//printf("Auto open %s\n",seek->name);
-											chain++;
-											curr_depth++;
-											*chain = *(chain+1);
-											if(cb->tagopen) cb->tagopen(ctx, chain->name, chain->len);
-											//print_chain(root, curr_depth);
-										}
-										*/
+										//for (seek = chain+2; seek <= reverse; seek++) {
+										//	//printf("Auto open %s\n",seek->name);
+										//	chain++;
+										//	curr_depth++;
+										//	*chain = *(chain+1);
+										//	if(cb->tagopen) cb->tagopen(ctx, chain->name, chain->len);
+										//	//print_chain(root, curr_depth);
+										//}
+										//optional feature: auto-opening tags
 										seek = 0;
 										break;
 									}
 								}
 								if (seek) {
 									if (cb->warn)
-										cb->warn("Found no open node until root for '%s' at line %d, char %d. Ignored",buffer, context->line_number, p - xml);
+										cb->warn(context->ctx,"Found no open node until root for '%s' at line %d, char %d. Ignored",buffer, context->line_number, p - xml);
 								} else {
 									// TODO ??
 								}
 							}
 							context->state = CONTENT_WAIT;
 							goto next;
+*/
 						} else {
 							if (context->cb.die)
-								context->cb.die("close tag not terminated");
+								context->cb.die(context->ctx,"close tag not terminated");
 							goto fault;
 						}
 					default: //<node...>
@@ -509,7 +536,7 @@ void parse (char * xml, parser_state * context) {
 													break;
 												} else {
 													if (context->cb.die)
-														context->cb.die("Bad node open");
+														context->cb.die(context->ctx,"Bad node open");
 													goto fault;
 												}
 											case '/':
@@ -519,12 +546,13 @@ void parse (char * xml, parser_state * context) {
 													break;
 												} else {
 													if (context->cb.die)
-														context->cb.die("Bad node open");
+														context->cb.die(context->ctx,"Bad node open");
 													goto fault;
 												}
 											default: p++;
 										}
 									}
+									/*
 									if (context->depth + 1 > context->chain_size) {
 										seek = context->root;
 										context->chain_size *= 2;
@@ -537,8 +565,11 @@ void parse (char * xml, parser_state * context) {
 									memcpy(context->chain->name, at, context->chain->len);
 									context->chain->name[context->chain->len] = '\0';
 									if (cb->tagopen) cb->tagopen( ctx, at, context->chain->len );
+									*/
+									if (cb->tagopen) cb->tagopen( ctx, at, p - at );
 									break;
 								case 1:
+									len = p - at;
 									if (search = parse_attrs(p,context)) {
 										p = search;
 										state = 2;
@@ -552,14 +583,14 @@ void parse (char * xml, parser_state * context) {
 											case_wsp : p = eat_wsp(context, p);
 											case '/' :
 												if (cb->tagclose) cb->tagclose( ctx, at, len );
-												safefree(context->chain->name);
+												/*safefree(context->chain->name);
 												context->chain--;
-												context->depth--;
+												context->depth--;*/
 												p = eat_wsp(context, p+1);
 											case '>' : state = 3; p++; break;
 											default  :
 												if (context->cb.die)
-													context->cb.die("Bad char '%c' at the end of tag",*p);
+													context->cb.die(context->ctx,"Bad char '%c' at the end of tag",*p);
 												goto fault;
 										}
 									}
@@ -623,7 +654,7 @@ void parse (char * xml, parser_state * context) {
 		}
 	}
 	printf("parse done\n");
-	safefree(context->root);
+	//safefree(context->root);
 	return;
 	
 	eod:
@@ -638,25 +669,28 @@ void parse (char * xml, parser_state * context) {
 			case PI:
 			case TAG_OPEN:
 			case TAG_CLOSE:
-				printf("Bad document end\n");
+				if (context->cb.die)
+					context->cb.die(context->ctx,"Bad document end, state = %s",STATE[context->state]);
 				break;
 			case TEXT_READ:
 				printf("Need to call text cb at the end of document\n");
 				break;
 			case CONTENT_WAIT:
+			/*
 				if (context->depth == 0) {
 					//printf("END ok\n");
 				} else {
 					printf("Document aborted\n");
 					//print_chain(chain,curr_depth);
 				}
+			*/
 				break;
 			default:
 				printf("Bad context->state %d at the end of document\n",context->state);
 		}
 	
 	fault:
-	safefree(context->root);
+	//safefree(context->root);
 	return;
 }
 
