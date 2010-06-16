@@ -303,6 +303,54 @@ or diag explain($data),"\n";
 	or diag explain($data),"\n";
 }
 {
+	no utf8;
+	use bytes;
+	is_deeply
+		$data = xml2hash("<?xml encoding='UtF-8'?><text>С‚РµСЃС‚&#x2622;</text>"),
+		{text => "\x{442}\x{435}\x{441}\x{442}\x{2622}"},
+		'utf8.1',
+	or diag explain($data),"\n";
+	ok utf8::is_utf8($data->{text}), "utf flag ok";
+	
+	is_deeply
+		$data = xml2hash("<?xml encoding='UtF-8'?><text>С‚РµСЃС‚</text>", bytes => 1),
+		{text => "С‚РµСЃС‚"},
+		'utf8.2',
+	or diag explain($data),"\n";
+	ok !utf8::is_utf8($data->{text}), "utf flag not set";
+
+	is_deeply
+		$data = xml2hash("<?xml encoding='windows-1251'?><text>тест</text>", bytes => 1),
+		{text => "тест"},
+		'utf8.3',
+	or diag explain($data),"\n";
+	ok !utf8::is_utf8($data->{text}), "utf flag not set";
+
+	is_deeply
+		$data = xml2hash("<?xml encoding='windows-1251'?><text>тест</text>"),
+		{text => "\x{442}\x{435}\x{441}\x{442}"},
+		'utf8.4',
+	or diag explain($data),"\n";
+	ok utf8::is_utf8($data->{text}), "utf flag set";
+
+	is_deeply
+		$data = xml2hash("<?xml encoding='windows-1251'?><text>тест&#x30;</text>"),
+		{text => "\x{442}\x{435}\x{441}\x{442}0"},
+		'1251 + low entity',
+	or diag explain($data),"\n";
+	ok utf8::is_utf8($data->{text}), "utf flag set";
+
+	{
+		local $TODO = 'unicode entities in non-utf mode';
+		is_deeply
+			$data = xml2hash("<?xml encoding='windows-1251'?><text>тест&#2622;</text>"),
+			{text => "\x{442}\x{435}\x{441}\x{442}\x{2622}"},
+			'1251 + high entity',
+		or diag explain($data),"\n";
+		ok utf8::is_utf8($data->{text}), "utf flag set";
+	}
+}
+{
 	is_deeply
 		$data = xml2hash($xml1, array => 1),
 		{root => [{'-at' => 'key',nest => [{'#text' => 'firstmidlast',vv => [''],v => ['a',{'-at' => 'a','#text' => 'b'}]}]}]},

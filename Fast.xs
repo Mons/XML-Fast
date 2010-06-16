@@ -16,6 +16,7 @@ typedef void * ptr_t;
 #endif
 
 #define XML_DEBUG 0
+#define XML_DEVEL 1
 
 typedef struct {
 	char *name;
@@ -30,13 +31,19 @@ xmlfast 2209/s     24%      --
 
 */
 
+#define UTF8_BYTES   1
+#define UTF8_UPGRADE 2
+#define UTF8_DECODE  3
+#define UTF8_EDECODE 4
+
 typedef struct {
 	// config
 	unsigned int order;
 	unsigned int trim;
 	unsigned int bytes;
-	unsigned int utf8upgrade;
-	unsigned int utf8decode;
+	unsigned int utf8;
+	//unsigned int utf8upgrade;
+	//unsigned int utf8decode;
 	unsigned int arrays;
 	SV  * attr;
 	SV  * text;
@@ -51,8 +58,6 @@ typedef struct {
 	int depth;
 	unsigned int chainsize;
 	xml_node * chain;
-	//SV ** name;
-	//SV ** fullname;
 	HV ** hchain;
 	HV  * hcurrent; //just a pointer
 
@@ -64,7 +69,7 @@ typedef struct {
 	
 } parsestate;
 
-
+// hv_store to array if already have non-array value
 #define hv_store_a( hv, key, sv ) \
 	STMT_START { \
 		SV **exists; \
@@ -73,7 +78,6 @@ typedef struct {
 		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
 			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
 				AV *av = (AV *) SvRV( *exists ); \
-				/* printf("push '%s' to array in key '%s'\n", SvPV_nolen(old), kv); */ \
 				av_push( av, sv ); \
 			} \
 			else { \
@@ -94,6 +98,7 @@ typedef struct {
 		} \
 	} STMT_END
 
+// hv_store to array, create if not exists
 #define hv_store_aa( hv, key, sv ) \
 	STMT_START { \
 		SV **exists; \
@@ -101,7 +106,6 @@ typedef struct {
 		int   kl = SvCUR(key); \
 		if( ( exists = hv_fetch(hv, kv, kl, 0) ) && SvROK(*exists) && (SvTYPE( SvRV(*exists) ) == SVt_PVAV) ) { \
 			AV *av = (AV *) SvRV( *exists ); \
-			/* printf("push '%s' to array in key '%s'\n", SvPV_nolen(old), kv); */ \
 			av_push( av, sv ); \
 		} \
 		else { \
@@ -111,90 +115,155 @@ typedef struct {
 		} \
 	} STMT_END
 
-#define hv_store_cat( hv, key, sv ) \
-	STMT_START { \
-		SV **exists; \
-		char *kv = SvPV_nolen(key); \
-		int   kl = SvCUR(key); \
-		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
-			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
-				AV *av = (AV *) SvRV( *exists ); \
-				SV **val; \
-				I32 avlen = av_len(av); \
-				if ( (val = av_fetch(av,avlen,0)) && SvPOK(*val) ) { \
-					sv_catsv(*val, sv); \
-					SvREFCNT_dec(sv); \
-				} else { \
-					av_push( av, sv ); \
-				} \
-			} \
-			else { \
-				if (SvROK(*exists)) { \
-					croak("Can't concat to reference value %s",sv_reftype(SvRV(*exists),TRUE)); \
-				} else { \
-					sv_catsv(*exists, sv);\
-					SvREFCNT_dec(sv); \
-				} \
-			} \
-		} else { \
-			hv_store(hv, kv, kl, sv, 0); \
-		} \
-	} STMT_END
-
 #define xml_sv_decode(ctx, sv) \
 	STMT_START { \
-		if (ctx->utf8upgrade) { \
-			SvUTF8_on(sv); \
-		} \
-		else if (ctx->utf8decode) { \
-			sv_utf8_decode(sv); \
-		} \
-		else if (ctx->encode) { \
-			(void) sv_recode_to_utf8(sv, ctx->encode); \
-		} \
+		if (!ctx->bytes && !SvUTF8(sv)) {\
+			if (ctx->utf8 == UTF8_UPGRADE) { \
+				SvUTF8_on(sv); \
+			} \
+			else if (ctx->utf8 == UTF8_DECODE) { \
+				sv_utf8_decode(sv); \
+			} \
+			else if (ctx->encode) { \
+				(void) sv_recode_to_utf8(sv, ctx->encode); \
+			} \
+		}\
 	} STMT_END
 
+SV * find_encoding(char * encoding) {
+	dSP;
+	int count;
+	//require_pv("Encode.pm");
+	
+	ENTER;
+	SAVETMPS;
+	//printf("searching encoding '%s'\n",encoding);
+	
+	PUSHMARK(SP);
+	XPUSHs(sv_2mortal(newSVpv(encoding, 0)));
+	PUTBACK;
+	
+	count = call_pv("Encode::find_encoding",G_SCALAR);
+	
+	SPAGAIN;
+	if (SvTRUE(ERRSV)) {
+		printf("Shit happens: %s\n", SvPV_nolen(ERRSV));
+		POPs;
+	}
+	
+	if (count != 1)
+		croak("Bad number of returned values: %d",count);
+	
+	SV *encode = POPs;
+	//sv_dump(encode);
+	SvREFCNT_inc(encode);
+	
+	PUTBACK;
+	
+	FREETMPS;
+	LEAVE;
+	
+	return encode;
+}
+
+char * sv_recode_from_utf8(pTHX_ SV *sv, SV *encoding) {
+	dVAR;
+	PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8;
+	if (SvPOK(sv) && SvUTF8(sv) && SvROK(encoding)) {
+		SV *uni;
+		STRLEN len;
+		const char *s;
+		dSP;
+		ENTER;
+		SAVETMPS;
+		save_re_context();
+		PUSHMARK(sp);
+		EXTEND(SP, 3);
+		XPUSHs(encoding);
+		XPUSHs(sv);
+		
+		PUTBACK;
+		call_method("encode", G_SCALAR);
+		SPAGAIN;
+		uni = POPs;
+		PUTBACK;
+		s = SvPV_const(uni, len);
+		if (s != SvPVX_const(sv)) {
+			SvGROW(sv, len + 1);
+			Move(s, SvPVX(sv), len + 1, char);
+			SvCUR_set(sv, len);
+		}
+		FREETMPS;
+		LEAVE;
+		SvUTF8_on(sv);
+		return SvPVX(sv);
+	}
+	return SvPOKp(sv) ? SvPVX(sv) : NULL;
+}
+
+
 void on_comment(void * pctx, char * data,unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_comment");
+#endif
 	parsestate *ctx = pctx;
 	SV         *sv  = newSVpvn(data, length);
 	hv_store_a(ctx->hcurrent, ctx->comm, sv );
 }
 
+//TODO: Separate on_bytes/on_uchar for non-utf mode
+
 void on_uchar(void * pctx, wchar_t chr) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_text_part");
+#endif
 	parsestate *ctx = pctx;
-	// TODO: how to define where to store: either text or attribute
-	char *start, *end;
-	STRLEN len = 0;
-	if (ctx->textval) {
-		len = SvCUR(ctx->textval);
+	if (!ctx->utf8 && !UTF8_IS_INVARIANT(chr) ) {
+		warn("Can't yet handle high unicode entities in non-utf mode");
+		return;
+		if (!ctx->encode)
+			croak("Can't decode entities in non-utf8, bytes mode");
+		char *end, utf[UTF8_MAXBYTES + 1];
+		end = uvchr_to_utf8(utf, chr);
+		*end = '\0';
+		SV *tmp = sv_2mortal(newSVpvn(utf, end-utf));
+		SvUTF8_on(tmp);
+		char *bytes = sv_recode_from_utf8(tmp, ctx->encode);
+		printf("Decoded uchar, str=%s, len=%d, enc=%s\n", SvPV_nolen(tmp), bytes);
+		return;
 	} else {
-		ctx->textval = newSVpvn("",0);
+		char *start, *end;
+		STRLEN len = 0;
+		if (ctx->textval) {
+			len = SvCUR(ctx->textval);
+		} else {
+			ctx->textval = newSVpvn("",0);
+		}
+		sv_grow(ctx->textval, len + UTF8_MAXBYTES + 1 );
+		start = end = SvEND(ctx->textval);
+		end = uvchr_to_utf8(start, chr);
+		*end = '\0';
+		SvCUR_set(ctx->textval,len + end - start);
+		printf("Appended uchar, str=%s\n", SvPV_nolen(ctx->textval));
 	}
-	sv_grow(ctx->textval, len + UTF8_MAXBYTES+1 );
-	start = end = SvEND(ctx->textval);
-	//printf("Got string (%p) start=%p\n",SvPVX(ctx->textval),start);
-	end = uvchr_to_utf8(start, chr);
-	*end = '\0';
-	SvCUR_set(ctx->textval,len + end - start);
-	//printf("appended uchar: %s[%d] (%s) [%d+%d]\n",SvPV_nolen(ctx->textval), SvCUR(ctx->textval), start, len, end - start);
 }
 
 void on_bytes_part(void * pctx, char * data, unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_bytes_part");
+#endif
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
 		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
 	} else {
 		ctx->textval = newSVpvn(data, length);
 	}
-	//hv_store_a( ctx->hcurrent, ctx->text, ctx->textval );
-	//ctx->textval = 0;
 }
 
 void on_bytes(void * pctx, char * data, unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_bytes");
+#endif
 	parsestate *ctx = pctx;
 	if (!ctx->textval && !length) {
 		warn("Called on_bytes with empty text and empty body");
@@ -207,7 +276,23 @@ void on_bytes(void * pctx, char * data, unsigned int length) {
 	xml_sv_decode(ctx,ctx->textval);
 	if (ctx->attrname) {
 		if (ctx->pi) {
-			printf("PI %s, attr %s='%s'\n",SvPV_nolen(ctx->pi), SvPV_nolen(ctx->attrname),SvPV_nolen(ctx->textval) );
+			
+			if (
+				(SvCUR(ctx->attrname) == 8) &&
+				(memcmp(SvPV_nolen(ctx->attrname), "encoding", 8) == 0 )
+			) {
+				ctx->encoding = (char *) SvPV_nolen(ctx->textval);
+				//printf("Noticed encoding %s\n",ctx->encoding);
+				if ( ( SvCUR(ctx->textval) == 5 ) && ( strncasecmp( ctx->encoding, "utf-8",5 ) == 0 ) ) {
+					if (ctx->bytes) ctx->utf8 = UTF8_BYTES;
+					//printf("Native utf-8 mode (%d)\n",ctx->utf8);
+				} else {
+					ctx->encode      = find_encoding(ctx->encoding);
+					ctx->utf8        = 0;
+				}
+			} else {
+				//printf("PI %s, attr %s='%s'\n",SvPV_nolen(ctx->pi), SvPV_nolen(ctx->attrname),SvPV_nolen(ctx->textval) );
+			}
 			sv_2mortal(ctx->textval);
 		} else {
 			hv_store_a(ctx->hcurrent, ctx->attrname, ctx->textval);
@@ -217,6 +302,7 @@ void on_bytes(void * pctx, char * data, unsigned int length) {
 		ctx->textval = 0;
 	}
 	else {
+		//printf("text close, store %s\n",SvPV_nolen(ctx->textval));
 		hv_store_a(ctx->hcurrent, ctx->text, ctx->textval);
 	}
 	ctx->textval = 0;
@@ -224,7 +310,9 @@ void on_bytes(void * pctx, char * data, unsigned int length) {
 
 
 void on_cdata(void * pctx, char * data,unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_cdata");
+#endif
 	parsestate *ctx = pctx;
 	SV *sv   = newSVpvn(data, length);
 	xml_sv_decode(ctx,sv);
@@ -232,13 +320,17 @@ void on_cdata(void * pctx, char * data,unsigned int length) {
 }
 
 void on_pi_open(void * pctx, char * data, unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_pi_open");
+#endif
 	parsestate *ctx = pctx;
 	ctx->pi = newSVpvn(data,length);
 }
 
 void on_pi_close(void * pctx, char * data, unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_pi_close");
+#endif
 	parsestate *ctx = pctx;
 	//SvREFCNT_dec(ctx->pi);
 	sv_2mortal(ctx->pi);
@@ -246,7 +338,9 @@ void on_pi_close(void * pctx, char * data, unsigned int length) {
 }
 
 void on_tag_open(void * pctx, char * data, unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_tag_open");
+#endif
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
 		xml_sv_decode(ctx,ctx->textval);
@@ -291,9 +385,10 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 
 void on_tag_close(void * pctx, char * data, unsigned int length);
 void on_tag_close(void * pctx, char * data, unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_tag_close");
+#endif
 	parsestate *ctx = pctx;
-	// TODO: check node name
 	SV *tag = sv_2mortal(newSVpvn(data,length));
 	
 	SV **text;
@@ -455,7 +550,9 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 }
 
 void on_attr_name(void * pctx, char * data,unsigned int length) {
+#if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_attr_name");
+#endif
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
 		croak("Have textval=%s, while called attrname\n",SvPV_nolen(ctx->textval));
@@ -478,8 +575,10 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 }
 
 void on_warn(void * pctx, char * format, ...) {
+#if XML_DEVEL
+	if (!pctx) croak("Context not passed to on_warn");
+#endif
 	parsestate *ctx = pctx;
-	if (!pctx) croak("Context not passed");
 	va_list va;
 	va_start(va,format);
 	SV *text = sv_2mortal(newSVpvn("",0));
@@ -489,51 +588,16 @@ void on_warn(void * pctx, char * format, ...) {
 }
 
 void on_die(void * pctx, char * format, ...) {
+#if XML_DEVEL
+	if (!pctx) croak("Context not passed to on_die");
+#endif
 	parsestate *ctx = pctx;
-	if (!pctx) croak("Context not passed");
 	va_list va;
 	va_start(va,format);
 	ctx->error = sv_2mortal(newSVpvn("",0));
 	sv_vcatpvf(ctx->error, format, &va);
 	warn("got a die with %s",SvPV_nolen(ctx->error));
 	va_end(va);
-}
-
-SV * find_encoding(char * encoding) {
-	dSP;
-	int count;
-	//require_pv("Encode.pm");
-	
-	ENTER;
-	SAVETMPS;
-	//printf("searching encoding '%s'\n",encoding);
-	
-	PUSHMARK(SP);
-	XPUSHs(sv_2mortal(newSVpv(encoding, 0)));
-	PUTBACK;
-	
-	count = call_pv("Encode::find_encoding",G_SCALAR);
-	
-	SPAGAIN;
-	if (SvTRUE(ERRSV)) {
-		printf("Shit happens: %s\n", SvPV_nolen(ERRSV));
-		POPs;
-	}
-	
-	if (count != 1)
-		croak("Bad number of returned values: %d",count);
-	
-	SV *encode = POPs;
-	//sv_dump(encode);
-	SvREFCNT_inc(encode);
-	//printf("Got encode=%s for encoding='%s'\n",SvPV_nolen(encode),encoding);
-	
-	PUTBACK;
-	
-	FREETMPS;
-	LEAVE;
-	
-	return encode;
 }
 
 /*
@@ -588,9 +652,9 @@ _xml2hash(xml,conf)
 			ctx.bytes = 1;
 		} else {
 			if ((key = hv_fetch(conf, "utf8decode", 10, 0)) && SvTRUE(*key)) {
-				ctx.utf8decode = 1;
+				ctx.utf8 = UTF8_DECODE;
 			} else {
-				ctx.utf8upgrade = 1;
+				ctx.utf8 = UTF8_UPGRADE;
 			}
 		}
 		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {

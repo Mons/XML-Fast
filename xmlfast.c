@@ -341,7 +341,7 @@ void parse (char * xml, parser_state * context) {
 	void * ctx = context->ctx;
 	xml_callbacks * cb = &context->cb;
 	context->line_number = 1;
-	char *p, *at, *end, *search, buffer[BUFFER], *buf, wait, loop, backup;
+	char *p, *at, *start, *end, *search, buffer[BUFFER], *buf, wait, loop, backup;
 	memset(&buffer,0,BUFFER);
 	unsigned int state, len;
 	unsigned char textstate;
@@ -604,18 +604,18 @@ void parse (char * xml, parser_state * context) {
 				break;
 			default:
 				context->state = TEXT_READ;
-				at = p;
+				start = at = p;
 				char *lastwsp = 0;
 				if (!context->save_wsp) {
 					p = eat_wsp(context, p);
-					if (p > at) at = p;
+					if (p > at) start = at = p;
 				}
 				textstate = TEXT_DATA;
 				while (1) {
 					switch(*p) {
 						case 0  :
 						case '<':
-							if (p > at) {
+							//if (p > at) {
 								if (!context->save_wsp && textstate == TEXT_WSP) {
 									//printf("Skip trailing whitespace chardata=%d wspdata=%d\n", lastwsp - at, p - lastwsp);
 								} else {
@@ -625,10 +625,10 @@ void parse (char * xml, parser_state * context) {
 									if (lastwsp  > at) {
 										cb->bytes(ctx, at, lastwsp - at );
 									} else {
-										//cb->bytes(ctx, "", 0 ); // we need a terminator
+										if (p > start) cb->bytes(ctx, "", 0 ); // explicitly terminate
 									}
 								}
-							}
+							//}
 							context->state = CONTENT_WAIT;
 							if (*p == 0) goto eod;
 							goto next;
