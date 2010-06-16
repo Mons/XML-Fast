@@ -15,7 +15,9 @@ do { \
 		case 0xd  :\
 		case 0x20
 
+#ifndef XML_DEBUG
 #define XML_DEBUG 0
+#endif
 
 #if XML_DEBUG
 #define WHERESTR    " at %s line %d.\n"

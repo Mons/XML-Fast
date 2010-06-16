@@ -15,6 +15,8 @@
 typedef void * ptr_t;
 #endif
 
+#define XML_DEBUG 0
+
 typedef struct {
 	char *name;
 	char *fullname;
@@ -49,13 +51,12 @@ typedef struct {
 	int depth;
 	unsigned int chainsize;
 	xml_node * chain;
-	SV ** name;
-	SV ** fullname;
+	//SV ** name;
+	//SV ** fullname;
 	HV ** hchain;
-	HV  * hcurrent;
-	SV  * ctag;
+	HV  * hcurrent; //just a pointer
+
 	SV  * pi;
-	
 	SV  * attrname;
 	SV  * textval;
 	
@@ -260,9 +261,13 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 		warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
 		ctx->chainsize *= 2;
 		ctx->hchain     = saferealloc( ctx->hchain,   sizeof(ptr_t) * ctx->chainsize );
-		ctx->fullname   = saferealloc( ctx->fullname, sizeof(ptr_t) * ctx->chainsize );
-		ctx->name       = saferealloc( ctx->fullname, sizeof(ptr_t) * ctx->chainsize );
+		//ctx->fullname   = saferealloc( ctx->fullname, sizeof(ptr_t) * ctx->chainsize );
+		//ctx->name       = saferealloc( ctx->name, sizeof(ptr_t) * ctx->chainsize );
+		ctx->chain      = saferealloc( ctx->chain, sizeof(ptr_t) * ctx->chainsize );
 	}
+	ctx->chain[ctx->depth].len = length;
+	ctx->chain[ctx->depth].name = data;
+/*
 	SV *fname;
 	if (ctx->depth == 0) {
 		fname = newSVpvn("",0);
@@ -276,6 +281,7 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 
 	ctx->name[ ctx->depth ] = sv_2mortal(newSVpvn(data,length));
 	ctx->fullname[ ctx->depth ] = fname;
+*/
 	//printf("node name=%s, fullname=%s\n", SvPV_nolen(ctx->name[ ctx->depth ]),SvPV_nolen(fname));
 	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
 	//node_depth++;
@@ -302,20 +308,17 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		warn("Ignore unbalanced tag: closed upper than root");
 		return;
 	}
-	if (!sv_eq( ctx->name[ctx->depth],tag)) {
+	if ( (ctx->chain[ctx->depth].len != length) || (memcmp( ctx->chain[ctx->depth].name, data, length) != 0) ) {
 		int close, depth = ctx->depth;
-		warn ("Unbalanced close tag '%s' (current=%s), depth=%d\n", SvPV_nolen(tag), SvPV_nolen(ctx->name[ctx->depth]),depth);
+		warn("Unbalanced close tag '%s' depth=%d\n", SvPV_nolen(tag),depth);
 		while (depth > 0) {
-			if (sv_eq( ctx->name[depth], tag )) {
-				printf("Found early opened node at depth %d\n",depth);
+			if ( (ctx->chain[depth].len == length) && (memcmp( ctx->chain[depth].name, data, length) == 0)) {
 				for (close = ctx->depth; close >= depth; close--) {
-					printf("Auto close %s (current=%s) at depth %d\n",SvPV_nolen( ctx->name[close] ), SvPV_nolen(ctx->name[ctx->depth]), close);
-					on_tag_close(pctx, SvPV_nolen( ctx->name[close] ), SvCUR(ctx->name[close]));
+					on_tag_close(pctx, ctx->chain[close].name, ctx->chain[close].len);
 				}
 				depth = -1;
 				break;
 			}
-			//printf("Close %s\n",SvPV_nolen( ctx->name[depth] ));
 			depth--;
 		}
 		if (depth != -1) {
@@ -393,7 +396,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	if (ctx->depth > -1) {
 		HV *hv = ctx->hcurrent;
 		ctx->hcurrent = ctx->hchain[ ctx->depth ];
-		ctx->hchain[ ctx->depth ];// = (HV *)NULL;
+		ctx->hchain[ ctx->depth ] = (HV *)NULL;
 		ctx->depth--;
 		if (keys == 0) {
 			//printf("Tag %s have no keys\n", SvPV_nolen(tag));
@@ -447,8 +450,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		}
 		if (svtext) SvREFCNT_dec(svtext);
 	} else {
-		SV *sv   = newSVpvn(data, length);
-		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(sv));
+		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(tag));
 	}
 }
 
@@ -667,8 +669,9 @@ _xml2hash(xml,conf)
 		} else{
 			ctx.hcurrent = newHV();
 			
-			ctx.name     = safemalloc( sizeof(ptr_t) * ctx.chainsize);
-			ctx.fullname = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			//ctx.name     = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			//ctx.fullname = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			ctx.chain    = safemalloc( sizeof(ptr_t) * ctx.chainsize);
 			ctx.hchain   = safemalloc( sizeof(ptr_t) * ctx.chainsize);
 			ctx.depth    = -1;
 			
@@ -704,11 +707,32 @@ _xml2hash(xml,conf)
 				state.save_wsp     = 1;
 		}
 		parse(xml,&state);
-		if(ctx.encode) SvREFCNT_dec(ctx.encode);
+		/*
+		printf("Parse done. tv=%p\n",ctx.textval);
+		int i;
+		for (i=0; i < ctx.chainsize; i++ ) {
+			printf("\thv at depth %d = %p\n", i, ctx.hchain[i]);
+		}
+		*/
+		if(ctx.encode)   SvREFCNT_dec(ctx.encode);
+		if(ctx.textval)  SvREFCNT_dec(ctx.textval);
+		if(ctx.pi)       SvREFCNT_dec(ctx.pi);
+		if(ctx.attrname) SvREFCNT_dec(ctx.attrname);
+		
 		safefree(ctx.hchain);
-		safefree(ctx.fullname);
-		safefree(ctx.name);
+		safefree(ctx.chain);
+		
+		if (ctx.depth > -1) {
+			while(ctx.depth > -1) {
+				printf("Free depth %d\n",ctx.depth);
+				on_tag_close(&ctx,ctx.chain->name,ctx.chain->len);
+				//SvREFCNT_dec(ctx.hchain[ctx.depth--]);
+			}
+			sv_2mortal(RETVAL);
+			croak("Unbalanced tags" );
+		}
 		if (ctx.error) {
+			sv_2mortal(RETVAL);
 			croak("%s", SvPV_nolen(ctx.error));
 		}
 	OUTPUT:

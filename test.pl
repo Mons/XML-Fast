@@ -149,6 +149,20 @@ for (1..5) {
 
 Devel::Leak::CheckSV($handle);
 print "== BIG TEST END ==\n";
+print "== BAD TEST ==\n";
+Devel::Leak::NoteSV($handle);
+for (1..1) {
+	eval {
+		XML::Fast::xml2hash('<test>111');
+	};
+	warn;
+}
+
+Devel::Leak::CheckSV($handle);
+
+print "== BAD TEST END ==\n";
+exit if $ARGV[0] eq 'leak';
+
 #}
 
 XML::Fast::xml2hash("", trim => undef);
