@@ -264,6 +264,23 @@ void on_pi_attr(parsestate *ctx) {
 			sv_2mortal(ctx->textval);
 }
 
+static inline SV * mkchr(UV chr) {
+	char *end, utf[UTF8_MAXBYTES + 1];
+	/*
+	if (UTF8_IS_INVARIANT(chr)) {
+		utf[0] = (char)chr;
+		utf[1] = 0;
+		return newSVpvn(utf,2);
+	}
+	*/
+	SV *tmp;
+	end = uvchr_to_utf8(utf, chr);
+	*end = '\0';
+	tmp = newSVpvn(utf, end-utf);
+	SvUTF8_on(tmp);
+	return tmp;
+}
+
 void on_uchar(void * pctx, wchar_t chr) {
 #if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_text_part");
@@ -272,11 +289,7 @@ void on_uchar(void * pctx, wchar_t chr) {
 	if (!ctx->utf8 && ctx->bytes && !UTF8_IS_INVARIANT(chr) ) {
 		if (!ctx->encode)
 			croak("Can't decode entities in non-utf8, bytes mode");
-		char *end, utf[UTF8_MAXBYTES + 1];
-		end = uvchr_to_utf8(utf, chr);*end = '\0';
-		//printf("char end=%d\n",*end);
-		SV *tmp = newSVpvn(utf, end-utf);
-		SvUTF8_on(tmp);
+		SV *tmp = mkchr(chr);
 		SV *bytes = sv_recode_from_utf8(tmp, ctx->encode);
 		if (SvCUR(bytes) == 0) {
 			warn("Can't recode U+%04d entity into %s in bytes mode", chr, ctx->encoding);
@@ -300,7 +313,6 @@ void on_uchar(void * pctx, wchar_t chr) {
 	} else {
 		char *start, *end;
 		STRLEN len = 0;
-		//printf("Before append=%s\n",)
 		if (ctx->textval) {
 			len = SvCUR(ctx->textval);
 		} else {
@@ -310,7 +322,6 @@ void on_uchar(void * pctx, wchar_t chr) {
 		start = end = SvEND(ctx->textval);
 		end = uvchr_to_utf8(start, chr);*end = '\0';
 		SvCUR_set(ctx->textval,len + end - start);
-		//printf("Appended uchar(%s), str=%s\n", start, SvPV_nolen(ctx->textval));
 	}
 }
 
@@ -430,7 +441,6 @@ void on_pi_close(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_pi_close");
 #endif
 	parsestate *ctx = pctx;
-	//SvREFCNT_dec(ctx->pi);
 	sv_2mortal(ctx->pi);
 	ctx->pi = 0;
 }
@@ -446,16 +456,12 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 		ctx->textval = 0;
 	}
 	HV * hv = newHV();
-	//SV *sv = newRV_noinc( (SV *) hv );
-	//hv_store(ctx->hcurrent, data, length, sv, 0);
 	ctx->depth++;
 	if (ctx->depth >= ctx->chainsize) {
 		warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
 		ctx->chainsize *= 2;
-		ctx->hchain     = saferealloc( ctx->hchain,   sizeof(ptr_t) * ctx->chainsize );
-		//ctx->fullname   = saferealloc( ctx->fullname, sizeof(ptr_t) * ctx->chainsize );
-		//ctx->name       = saferealloc( ctx->name, sizeof(ptr_t) * ctx->chainsize );
-		ctx->chain      = saferealloc( ctx->chain, sizeof(ptr_t) * ctx->chainsize );
+		ctx->hchain     = saferealloc( ctx->hchain, sizeof(ptr_t) * ctx->chainsize );
+		ctx->chain      = saferealloc( ctx->chain,  sizeof(xml_node) * ctx->chainsize );
 	}
 	ctx->chain[ctx->depth].len = length;
 	ctx->chain[ctx->depth].name = data;
@@ -476,8 +482,6 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 */
 	//printf("node name=%s, fullname=%s\n", SvPV_nolen(ctx->name[ ctx->depth ]),SvPV_nolen(fname));
 	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
-	//node_depth++;
-	//node_chain[node_depth] = collect;
 	ctx->hcurrent = hv;
 }
 
@@ -576,7 +580,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 				//else
 				{
 					// Remebmer for use if it is single
-					warn("# No join\n");
+					//warn("# No join\n");
 					svtext = newRV( (SV *) av );
 				}
 			} else {
@@ -626,7 +630,6 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			}
 		} else {
 			SV *sv = newRV_noinc( (SV *) hv );
-			SV **ary;
 			//printf("Store hash into RV '%lx'\n",sv);
 			//hv_store(ctx->hcurrent, data, length, sv, 0);
 			//printf("Check %s to be array\n",SvPV_nolen(tag));
@@ -677,7 +680,7 @@ void on_warn(void * pctx, char * format, ...) {
 #if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_warn");
 #endif
-	parsestate *ctx = pctx;
+	//parsestate *ctx = pctx;
 	va_list va;
 	va_start(va,format);
 	SV *text = sv_2mortal(newSVpvn("",0));

@@ -88,15 +88,6 @@ struct entityref{
 #define xml_error(x) do { printf("Error at char %d (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
 
 //Max string lengh for entity name, with trailing '\0'
-#define MAX_ENTITY_LENGTH 5
-#define ENTITY_COUNT 5
-static entity entitydef[] = {
-	 { "lt",     "<"  }
-	,{ "gt",     ">"  }
-	,{ "amp",    "&"  }
-	,{ "apos",   "'"  }
-	,{ "quot",   "\"" }
-};
 
 extern void init_entities();
 extern void parse (char * xml, parser_state * state);

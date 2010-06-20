@@ -11,5 +11,6 @@ WriteMakefile(
 	LIBS              => [''], # e.g., '-lm'
 	DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
 	INC               => '-I.', # e.g., '-I. -I/usr/include/other'
+	CCFLAGS           => '-Wunused',
 	OBJECT            => 'Fast.o xmlfast.o', # link all the C files too
 );

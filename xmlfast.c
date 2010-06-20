@@ -9,6 +9,16 @@ do { \
 	er->children = N; \
 } while (0)
 
+#define MAX_ENTITY_LENGTH 5
+#define ENTITY_COUNT 5
+entity entitydef[] = {
+	 { "lt",     "<"  }
+	,{ "gt",     ">"  }
+	,{ "amp",    "&"  }
+	,{ "apos",   "'"  }
+	,{ "quot",   "\"" }
+};
+
 #define case_wsp   \
 		case 0xa  : context->line_number++; \
 		case 0x9  :\
