@@ -27,10 +27,6 @@ do { \
 #define debug(...)
 #endif
 
-#ifndef croak
-#define croak(...) do { fprintf(stderr, __VA_ARGS__); exit(255); } while(0)
-#endif
-
 #define DOCUMENT_START 0
 #define LT_OPEN        1
 #define COMMENT_OPEN   2
@@ -93,7 +89,8 @@ void calculate(char *prefix, unsigned char offset, entity *strings, struct entit
 			ents->entity = keep->val;
 			ents->length = strlen(ents->entity);
 		} else {
-			croak("fuck, not found keep");
+			fprintf(stderr,"not found keep for entity generator\n");
+			return;
 		}
 		return;
 	}
