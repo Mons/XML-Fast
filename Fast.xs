@@ -17,6 +17,9 @@ typedef void * ptr_t;
 
 #define XML_DEBUG 0
 #define XML_DEVEL 0
+#ifndef PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8
+#define PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8
+#endif
 
 typedef struct {
 	char *name;
@@ -242,6 +245,7 @@ SV * get_constant(char * name) {
 
 SV * sv_recode_from_utf8(pTHX_ SV *sv, SV *encoding) {
 	dVAR;
+
 	PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8;
 	if (SvPOK(sv) && SvUTF8(sv) && SvROK(encoding)) {
 		SV *bytes;
