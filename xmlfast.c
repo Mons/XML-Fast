@@ -151,7 +151,7 @@ static inline char * eatback_wsp(parser_state * context, char *p) {
 
 static inline char *parse_entity (parser_state * context, char *p) {
 	//return p+1;
-	struct entityref *cur_ent, *last_ent;
+	struct entityref *cur_ent;
 	char *at;
 	at = p;
 	unsigned int i;
@@ -257,7 +257,6 @@ static inline char *parse_attrs(char *p, parser_state * context) {
 		char wait = 0;
 		char loop = 1;
 		char *at,*end;
-		struct entityref *entity;
 		p = eat_wsp(context, p);
 		while(loop) {
 			switch(state) {
@@ -348,7 +347,7 @@ void parse (char * xml, parser_state * context) {
 	void * ctx = context->ctx;
 	xml_callbacks * cb = &context->cb;
 	context->line_number = 1;
-	char *p, *at, *start, *end, *search, buffer[BUFFER], *buf, wait, loop, backup;
+	char *p, *at, *start, *end, *search, buffer[BUFFER];
 	memset(&buffer,0,BUFFER);
 	unsigned int state, len;
 	unsigned char textstate;
@@ -358,11 +357,7 @@ void parse (char * xml, parser_state * context) {
 	context->chain_size = 64;
 	context->root = context->chain = safemalloc( sizeof(xml_node) * context->chain_size );
 	*/
-	unsigned char node_closed;
-	struct entityref *entity;
-	unsigned int line;
-
-
+	
 	context->state = DOCUMENT_START;
 	next:
 	while (1) {

@@ -16,12 +16,13 @@ typedef void * ptr_t;
 #endif
 
 #define XML_DEBUG 0
-#define XML_DEVEL 1
+#define XML_DEVEL 0
 
 typedef struct {
 	char *name;
-	char *fullname;
 	unsigned int len;
+	char *fullname;
+	unsigned int fulllen;
 } xml_node;
 
 /*
@@ -36,13 +37,18 @@ xmlfast 2209/s     24%      --
 #define UTF8_DECODE  3
 #define UTF8_EDECODE 4
 
+#define EMIT_WARNS   0x0001
+#define TAG_MATCH    0x0002
+
+#define MODE_ORDER   0x1000
+#define MODE_TRIM    0x2000
+#define MODE_ARRAYS  0x4000
+
 typedef struct {
 	// config
-	unsigned int order;
-	unsigned int trim;
+	unsigned int flags;
 	unsigned int bytes;
 	unsigned int utf8;
-	unsigned int arrays;
 	SV  * attr;
 	SV  * text;
 	SV  * join;
@@ -90,10 +96,10 @@ typedef struct {
 					av_push( av, old ); \
 				} \
 				av_push( av, sv ); \
-				hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
+				(void) hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
 			} \
 		} else { \
-			hv_store(hv, kv, kl, sv, 0); \
+			(void) hv_store(hv, kv, kl, sv, 0); \
 		} \
 	} STMT_END
 
@@ -110,7 +116,7 @@ typedef struct {
 		else { \
 			AV *av   = newAV(); \
 			av_push( av, sv ); \
-			hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
+			(void) hv_store( hv, kv, kl, newRV_noinc( (SV *) av ), 0 ); \
 		} \
 	} STMT_END
 
@@ -131,6 +137,44 @@ typedef struct {
 
 void on_bytes_charset_part(void * pctx, char * data, unsigned int length);
 void on_bytes_charset(void * pctx, char * data, unsigned int length);
+void on_tag_close(void * pctx, char * data, unsigned int length);
+
+static inline void DESTROY (parsestate *ctx) {
+	if(ctx->encode)   { SvREFCNT_dec(ctx->encode);   ctx->encode = 0;   }
+	if(ctx->textval)  { SvREFCNT_dec(ctx->textval);  ctx->textval = 0;  }
+	if(ctx->pi)       { SvREFCNT_dec(ctx->pi);       ctx->pi = 0;       }
+	if(ctx->attrname) { SvREFCNT_dec(ctx->attrname); ctx->attrname = 0; }
+	if(ctx->array)    { SvREFCNT_dec(ctx->array);    ctx->array = 0;    }
+	if(ctx->depth > -1) {
+		while(ctx->depth > -1) {
+			printf("Free depth %d\n",ctx->depth);
+			on_tag_close(ctx,ctx->chain->name,ctx->chain->len);
+		}
+	}
+	if (ctx->hchain) { safefree(ctx->hchain); ctx->hchain = 0; }
+	if (ctx->chain)  { safefree(ctx->chain); ctx->chain = 0; }
+}
+
+static inline void my_croak(parsestate *ctx, char * format, ...) {
+	//TODO: free all
+	DESTROY(ctx);
+	va_list va;
+	va_start(va,format);
+	SV *text = sv_2mortal(newSVpvn("",0));
+	sv_vcatpvf(text, format, &va);
+	va_end(va);
+	croak("%s",SvPV_nolen(text));
+}
+static inline void my_warn(parsestate *ctx, char * format, ...) {
+	//TODO: free all
+	if(!(ctx->flags & EMIT_WARNS)) return;
+	va_list va;
+	va_start(va,format);
+	SV *text = sv_2mortal(newSVpvn("",0));
+	sv_vcatpvf(text, format, &va);
+	va_end(va);
+	warn("%s",SvPV_nolen(text));
+}
 
 SV * find_encoding(char * encoding) {
 	dSP;
@@ -139,7 +183,6 @@ SV * find_encoding(char * encoding) {
 	
 	ENTER;
 	SAVETMPS;
-	//printf("searching encoding '%s'\n",encoding);
 	
 	PUSHMARK(SP);
 	XPUSHs(sv_2mortal(newSVpv(encoding, 0)));
@@ -149,8 +192,8 @@ SV * find_encoding(char * encoding) {
 	
 	SPAGAIN;
 	if (SvTRUE(ERRSV)) {
-		printf("Shit happens: %s\n", SvPV_nolen(ERRSV));
-		POPs;
+		warn("Shit happens: %s\n", SvPV_nolen(ERRSV));
+		(void) POPs;
 	}
 	
 	if (count != 1)
@@ -202,8 +245,6 @@ SV * sv_recode_from_utf8(pTHX_ SV *sv, SV *encoding) {
 	PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8;
 	if (SvPOK(sv) && SvUTF8(sv) && SvROK(encoding)) {
 		SV *bytes;
-		STRLEN len;
-		const char *s;
 		dSP;
 		ENTER;
 		SAVETMPS;
@@ -286,13 +327,14 @@ void on_uchar(void * pctx, wchar_t chr) {
 	if (!pctx) croak("Context not passed to on_text_part");
 #endif
 	parsestate *ctx = pctx;
+	dTHX;
 	if (!ctx->utf8 && ctx->bytes && !UTF8_IS_INVARIANT(chr) ) {
 		if (!ctx->encode)
-			croak("Can't decode entities in non-utf8, bytes mode");
+			my_croak(ctx,"Can't decode entities in non-utf8, bytes mode");
 		SV *tmp = mkchr(chr);
-		SV *bytes = sv_recode_from_utf8(tmp, ctx->encode);
+		SV *bytes = sv_recode_from_utf8(aTHX_ tmp, ctx->encode);
 		if (SvCUR(bytes) == 0) {
-			warn("Can't recode U+%04d entity into %s in bytes mode", chr, ctx->encoding);
+			my_warn(ctx,"Can't recode U+%04d entity into %s in bytes mode", chr, ctx->encoding);
 			if (ctx->textval) {
 				sv_catpvn(ctx->textval,"?",1);
 			} else {
@@ -348,7 +390,7 @@ void on_bytes_charset(void * pctx, char * data, unsigned int length) {
 #endif
 	parsestate *ctx = pctx;
 	if (!ctx->textval && !length) {
-		warn("Called on_bytes with empty text and empty body");
+		my_warn(ctx,"Called on_bytes with empty text and empty body");
 	}
 	SV *tmp = newSVpvn(data, length);
 	xml_sv_decode(ctx,tmp);
@@ -392,7 +434,7 @@ void on_bytes(void * pctx, char * data, unsigned int length) {
 #endif
 	parsestate *ctx = pctx;
 	if (!ctx->textval && !length) {
-		warn("Called on_bytes with empty text and empty body");
+		my_warn(ctx,"Called on_bytes with empty text and empty body");
 	}
 	if (ctx->textval) {
 		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
@@ -465,27 +507,35 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 	}
 	ctx->chain[ctx->depth].len = length;
 	ctx->chain[ctx->depth].name = data;
-/*
-	SV *fname;
-	if (ctx->depth == 0) {
-		fname = newSVpvn("",0);
-	} else {
-		fname = newSV(SvCUR(ctx->fullname[ctx->depth - 1]) + length+2 );
-		sv_copypv( fname,ctx->fullname[ctx->depth - 1] );
+	if (ctx->flags & TAG_MATCH) {
+		if (ctx->depth == 0) {
+			ctx->chain[ctx->depth].fullname = safemalloc( ( ctx->chain[ctx->depth].fulllen = length + 1 ) + 1);
+			ctx->chain[ctx->depth].fullname[0] = '/';
+			memcpy(ctx->chain[ctx->depth].fullname+1,data,length);
+			ctx->chain[ctx->depth].fullname[length+1] = 0;
+			//printf("Fullame = %s\n",ctx->chain[ctx->depth].fullname);
+		} else {
+			ctx->chain[ctx->depth].fullname = safemalloc( ( ctx->chain[ctx->depth].fulllen = ctx->chain[ctx->depth - 1].fulllen + length + 1 ) + 1 );
+			memcpy(
+				ctx->chain[ctx->depth].fullname,
+				ctx->chain[ctx->depth - 1].fullname,
+				ctx->chain[ctx->depth - 1].fulllen
+			);
+			ctx->chain[ctx->depth].fullname[ ctx->chain[ctx->depth - 1].fulllen ] = '/';
+			memcpy(
+				ctx->chain[ctx->depth].fullname + ctx->chain[ctx->depth - 1].fulllen + 1,
+				data,
+				length
+			);
+			ctx->chain[ctx->depth].fullname[ ctx->chain[ctx->depth].fulllen ] = 0;
+			//printf("Fullame = %s\n",ctx->chain[ctx->depth].fullname);
+		}
 	}
-	sv_catpvn_nomg(fname, "/",1);
-	sv_catpvn_nomg(fname, data, length);
-	sv_2mortal(fname);
-
-	ctx->name[ ctx->depth ] = sv_2mortal(newSVpvn(data,length));
-	ctx->fullname[ ctx->depth ] = fname;
-*/
 	//printf("node name=%s, fullname=%s\n", SvPV_nolen(ctx->name[ ctx->depth ]),SvPV_nolen(fname));
 	ctx->hchain[ ctx->depth ] = ctx->hcurrent;
 	ctx->hcurrent = hv;
 }
 
-void on_tag_close(void * pctx, char * data, unsigned int length);
 void on_tag_close(void * pctx, char * data, unsigned int length) {
 #if XML_DEVEL
 	if (!pctx) croak("Context not passed to on_tag_close");
@@ -502,12 +552,12 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		ctx->textval = 0;
 	}
 	if (ctx->depth < 0) {
-		warn("Ignore unbalanced tag: closed upper than root");
+		my_warn(ctx,"Ignore unbalanced tag: closed upper than root");
 		return;
 	}
 	if ( (ctx->chain[ctx->depth].len != length) || (memcmp( ctx->chain[ctx->depth].name, data, length) != 0) ) {
 		int close, depth = ctx->depth;
-		warn("Unbalanced close tag '%s' depth=%d\n", SvPV_nolen(tag),depth);
+		my_warn(ctx,"Unbalanced close tag '%s' depth=%d\n", SvPV_nolen(tag),depth);
 		while (depth > 0) {
 			if ( (ctx->chain[depth].len == length) && (memcmp( ctx->chain[depth].name, data, length) == 0)) {
 				for (close = ctx->depth; close >= depth; close--) {
@@ -520,7 +570,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			depth--;
 		}
 		if (depth != -1) {
-			warn("Found no open tag for %s. Ignored", SvPV_nolen(tag));
+			my_warn(ctx,"Found no open tag for %s. Ignored", SvPV_nolen(tag));
 		}
 		return;
 	}
@@ -555,7 +605,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 					}
 					//printf("Joined: to %s => '%s'\n",SvPV_nolen(ctx->text),SvPV_nolen(svtext));
 					SvREFCNT_inc(svtext);
-					hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
+					(void) hv_store(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), svtext, 0);
 				}
 				else
 				// currently unreachable, since if we have single element, it is stored as SV value, not AV
@@ -600,7 +650,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			//printf("Tag %s have no keys\n", SvPV_nolen(tag));
 			SvREFCNT_dec(hv);
 			SV *sv = newSVpvn("",0);
-			if (ctx->arrays) {
+			if (ctx->flags & MODE_ARRAYS) {
 				hv_store_aa(ctx->hcurrent, tag, sv);
 			}
 			else if (ctx->array && (hv_exists(ctx->array, data,length ) )) {
@@ -617,7 +667,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			SvREFCNT_inc(svtext);
 			SvREFCNT_dec(hv);
 			//hv_store(ctx->hcurrent, data, length, svtext, 0);
-			if (ctx->arrays) {
+			if (ctx->flags & MODE_ARRAYS) {
 				//printf("Cast %s as array (all should be)\n",SvPV_nolen(tag));
 				hv_store_aa(ctx->hcurrent, tag, svtext);
 			}
@@ -633,7 +683,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 			//printf("Store hash into RV '%lx'\n",sv);
 			//hv_store(ctx->hcurrent, data, length, sv, 0);
 			//printf("Check %s to be array\n",SvPV_nolen(tag));
-			if (ctx->arrays) {
+			if (ctx->flags & MODE_ARRAYS) {
 				//printf("Cast %s as array (all should be)\n",SvPV_nolen(tag));
 				hv_store_aa(ctx->hcurrent, tag, sv);
 			}
@@ -647,7 +697,7 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 		}
 		if (svtext) SvREFCNT_dec(svtext);
 	} else {
-		croak("Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(tag));
+		my_croak(ctx,"Bad depth: %d for tag close %s\n",ctx->depth,SvPV_nolen(tag));
 	}
 }
 
@@ -657,12 +707,11 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 #endif
 	parsestate *ctx = pctx;
 	if (ctx->textval) {
-		croak("Have textval=%s, while called attrname\n",SvPV_nolen(ctx->textval));
+		my_croak(ctx,"Have textval=%s, while called attrname\n",SvPV_nolen(ctx->textval));
 	}
 	if (ctx->attrname) {
-		croak("Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
+		my_croak(ctx,"Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
 	}
-	SV **key;
 	if (ctx->pi) {
 		ctx->attrname = newSVpvn(data,length);
 	} else {
@@ -681,6 +730,7 @@ void on_warn(void * pctx, char * format, ...) {
 	if (!pctx) croak("Context not passed to on_warn");
 #endif
 	//parsestate *ctx = pctx;
+	//if(!(ctx->flags & EMIT_WARNS)) return;
 	va_list va;
 	va_start(va,format);
 	SV *text = sv_2mortal(newSVpvn("",0));
@@ -701,6 +751,8 @@ void on_die(void * pctx, char * format, ...) {
 	warn("got a die with %s",SvPV_nolen(ctx->error));
 	va_end(va);
 }
+
+
 
 /*
 #define newRVHV() newRV_noinc((SV *)newHV())
@@ -753,28 +805,25 @@ SV*
 _xml2hash(xml,conf)
 		char *xml;
 		HV *conf;
+	PROTOTYPE: $$
 	CODE:
 		SV * RV;
-		/*UV unicode = 0x2622;
-		U8 chr[UTF8_MAXBYTES];
-		U8 *end = uvchr_to_utf8(chr, unicode);
-		*end = '\0';
-		croak("utf test=%s (len=%d, max=%d)\n", chr, end - chr, UTF8_MAXBYTES);*/
 		
 		parser_state state;
 		memset(&state,0,sizeof(state));
 		
 		parsestate ctx;
 		memset(&ctx,0,sizeof(parsestate));
+		
 		state.ctx = &ctx;
 		ctx.state = &state;
 		
 		SV **key;
 		if ((key = hv_fetch(conf, "order", 5, 0)) && SvTRUE(*key)) {
-			ctx.order = 1;
+			ctx.flags |= MODE_ORDER;
 		}
 		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
-			ctx.trim = 1;
+			ctx.flags |= MODE_TRIM;
 		}
 		if ((key = hv_fetch(conf, "bytes", 5, 0)) && SvTRUE(*key)) {
 			ctx.bytes = 1;
@@ -784,9 +833,6 @@ _xml2hash(xml,conf)
 			} else {
 				ctx.utf8 = UTF8_UPGRADE;
 			}
-		}
-		if ((key = hv_fetch(conf, "trim", 4, 0)) && SvTRUE(*key)) {
-			ctx.trim = 1;
 		}
 		
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
@@ -808,17 +854,14 @@ _xml2hash(xml,conf)
 			if (SvROK(*key) && SvTYPE( SvRV(*key) ) == SVt_PVAV) {
 				AV *av = (AV *) SvRV( *key );
 				ctx.array = newHV();
-				//SV *array_container = newRV_noinc( (SV *)ctx.array );
-				//sv_2mortal(array_container);
 				I32 len = 0, avlen = av_len(av) + 1;
 				SV **val;
 				for ( len = 0; len < avlen; len++ ) {
 					if( ( val = av_fetch(av,len,0) ) && SvOK(*val) ) {
 						if(SvPOK(*val)) {
-							//printf("Remember %s should be array\n",SvPV_nolen(*val));
-							hv_store( ctx.array, SvPV_nolen(*val), SvCUR(*val), newSV(0), 0 );
+							(void) hv_store( ctx.array, SvPV_nolen(*val), SvCUR(*val), newSV(0), 0 );
 						} else {
-							croak("Bad enrty in array antry: %s",SvPV_nolen(*val));
+							my_croak(&ctx,"Bad enrty in array entry: %s",SvPV_nolen(*val));
 						}
 					}
 				}
@@ -827,47 +870,42 @@ _xml2hash(xml,conf)
 			}
 			else if (!SvROK(*key)) {
 				//printf("Remember all should be arrays\n");
-				ctx.arrays = SvTRUE(*key) ? 1 : 0;
+				if (SvTRUE(*key)) {
+					ctx.flags |= MODE_ARRAYS;
+				}
 			}
 			else {
-				croak("Bad entry in array: %s",SvPV_nolen(*key));
+				my_croak(&ctx,"Bad entry in array: %s",SvPV_nolen(*key));
 			}
 		}
+		
+		//ctx.flags |= TAG_MATCH;
 		
 		
 		if ((key = hv_fetch(conf, "_max_depth", 10, 0)) && SvOK(*key)) {
 			ctx.chainsize = SvIV(*key);
 			if (ctx.chainsize < 1) {
-				croak("_max_depth contains bad value (%d)",ctx.chainsize);
+				my_croak(&ctx,"_max_depth contains bad value (%d)",ctx.chainsize);
 			}
 		} else {
 			ctx.chainsize = 256;
 		}
 		
-		
-		//xml_callbacks cbs;
-		//memset(&cbs,0,sizeof(xml_callbacks));
 		if (!ctx.bytes) {
-			//if (utf8) {
-				ctx.encoding = "utf8";
-			//} else {
-			//	ctx.encoding = "utf-8";
-			//	ctx.encode = find_encoding(ctx.encoding);
-			//}
+			ctx.encoding = "utf8";
 		}
 		
-		if (ctx.order) {
-			croak("Ordered mode not implemented yet\n");
+		if (ctx.flags & MODE_ORDER) {
+			my_croak(&ctx,"Ordered mode not implemented yet\n");
 		} else{
 			ctx.hcurrent = newHV();
 			
-			//ctx.name     = safemalloc( sizeof(ptr_t) * ctx.chainsize);
-			//ctx.fullname = safemalloc( sizeof(ptr_t) * ctx.chainsize);
 			ctx.chain    = safemalloc( sizeof(xml_node) * ctx.chainsize);
 			ctx.hchain   = safemalloc( sizeof(ptr_t) * ctx.chainsize);
 			ctx.depth    = -1;
 			
 			RV  = sv_2mortal(newRV_noinc( (SV *) ctx.hcurrent ));
+			
 			state.cb.piopen      = on_pi_open;
 			state.cb.piclose     = on_pi_close;
 			state.cb.tagopen      = on_tag_open;
@@ -878,6 +916,7 @@ _xml2hash(xml,conf)
 				//
 			} else {
 				state.cb.warn         = on_warn;
+				ctx.flags |= EMIT_WARNS;
 			}
 			state.cb.die         = on_die;
 			
@@ -895,34 +934,16 @@ _xml2hash(xml,conf)
 				state.cb.uchar        = on_uchar;
 			}
 			
-			if (!ctx.trim)
+			if (!(ctx.flags & MODE_TRIM))
 				state.save_wsp     = 1;
 		}
 		parse(xml,&state);
-		/*
-		printf("Parse done. tv=%p\n",ctx.textval);
-		int i;
-		for (i=0; i < ctx.chainsize; i++ ) {
-			printf("\thv at depth %d = %p\n", i, ctx.hchain[i]);
-		}
-		*/
-		if(ctx.encode)   { SvREFCNT_dec(ctx.encode); ctx.encode = 0; }
-		if(ctx.textval)  { SvREFCNT_dec(ctx.textval); ctx.textval = 0; }
-		if(ctx.pi)       { SvREFCNT_dec(ctx.pi); ctx.pi = 0; }
-		if(ctx.attrname) { SvREFCNT_dec(ctx.attrname); ctx.attrname = 0; }
 		
 		if (ctx.depth > -1) {
-			while(ctx.depth > -1) {
-				printf("Free depth %d\n",ctx.depth);
-				on_tag_close(&ctx,ctx.chain->name,ctx.chain->len);
-			}
-			safefree(ctx.hchain);
-			safefree(ctx.chain);
-			croak("Unbalanced tags" );
+			ctx.error = sv_2mortal(newSVpv("Unbalanced tags",0));
 		}
 		
-		safefree(ctx.hchain);
-		safefree(ctx.chain);
+		DESTROY(&ctx);
 		
 		if (ctx.error) {
 			croak("%s", SvPV_nolen(ctx.error));

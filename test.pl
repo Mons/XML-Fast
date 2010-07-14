@@ -141,6 +141,7 @@ Devel::Leak::NoteSV($handle);
 for (1..5) {
 #=for rem
 	XML::Fast::xml2hash($bigxml, array => 1);
+	XML::Fast::xml2hash($bigxml, array => ['test1']);
 	XML::Fast::xml2hash($bigxml);
 	XML::Fast::xml2hash($bigxml, join => undef);
 	XML::Fast::xml2hash($bigxml, join => '');
@@ -157,9 +158,7 @@ for (1..1) {
 	};
 	warn;
 }
-
 Devel::Leak::CheckSV($handle);
-
 print "== BAD TEST END ==\n";
 exit if $ARGV[0] eq 'leak';
 
@@ -351,7 +350,7 @@ or diag explain($data),"\n";
 
 	{
 		is_deeply
-			$data = xml2hash("<?xml encoding='windows-1251'?><text>тест&#x2622;</text>", bytes => 1),
+			$data = xml2hash("<?xml encoding='windows-1251'?><text>тест&#x2622;</text>", bytes => 1, nowarn => 1),
 			{text => "тест?"},
 			'1251 + high entity (bytes mode)',
 		or diag explain($data),"\n";
