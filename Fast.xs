@@ -781,6 +781,7 @@ BOOT:
 void
 _test()
 	CODE:
+		dTHX;
 		SV * cons = get_constant("Encode::FB_QUIET");
 		SV * test = newSViv(4);
 		sv_dump(test);
@@ -793,7 +794,7 @@ _test()
 		*end = '\0';
 		SV *tmp = sv_2mortal(newSVpvn(utf, end-utf));
 		SvUTF8_on(tmp);
-		SV *bytes = sv_recode_from_utf8(tmp, encode);
+		SV *bytes = sv_recode_from_utf8(aTHX_ tmp, encode);
 		sv_dump(bytes);
 		printf("Created char %s / %s / bytes = %s\n", utf, SvPV_nolen(tmp), SvPV_nolen(bytes));
 		//sv_recode_to_utf8(tmp, encode);
