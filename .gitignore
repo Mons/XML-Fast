@@ -11,3 +11,4 @@ Makefile
 Makefile.old
 MANIFEST.bak
 core
+!dist/*
