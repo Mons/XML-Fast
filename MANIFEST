@@ -1,8 +1,14 @@
+.gitignore
 Changes
+Fast.bs
 Fast.xs
+lib/XML/Fast.pm
 Makefile.PL
 MANIFEST
+MANIFEST.SKIP
 ppport.h
 README
-t/XML-Fast.t
-lib/XML/Fast.pm
+t/00-load.t
+t/01-conv.t
+xmlfast.c
+xmlfast.h

@@ -20,6 +20,8 @@
 \#$
 \b\.#
 \.bak$
+\.o$
+^Fast\.c$
 
 # Avoid Devel::Cover files.
 \bcover_db\b
@@ -30,3 +32,4 @@
 ^makeall\.sh$
 ^tmp/
 ^AnyEvent-Connection-.*
+^run\.pl$

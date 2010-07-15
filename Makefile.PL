@@ -5,9 +5,9 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
 	NAME              => 'XML::Fast',
 	VERSION_FROM      => 'lib/XML/Fast.pm', # finds $VERSION
+	ABSTRACT_FROM     => 'lib/XML/Fast.pm', # retrieve abstract from module
 	PREREQ_PM         => { 'Encode' => 0 }, # e.g., Module::Name => 1.1
-	ABSTRACT_FROM  => 'lib/XML/Fast.pm', # retrieve abstract from module
-	AUTHOR         => 'Mons Anderson <mons@cpan.org>',
+	AUTHOR            => 'Mons Anderson <mons@cpan.org>',
 	LIBS              => [''], # e.g., '-lm'
 	DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
 	INC               => '-I.', # e.g., '-I. -I/usr/include/other'
