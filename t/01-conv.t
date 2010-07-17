@@ -9,7 +9,6 @@ BEGIN {
 	plan tests => 26 + $add;
 }
 
-use lib::abs '../lib';
 use XML::Fast 'xml2hash';
 use Data::Dumper ();
 

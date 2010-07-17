@@ -1,5 +1,6 @@
 # Avoid version control files.
 \B\.git\b
+^\.gitignore$
 
 # Avoid Makemaker generated and utility files.
 \bMANIFEST\.bak
@@ -21,6 +22,7 @@
 \b\.#
 \.bak$
 \.o$
+\.bs$
 ^Fast\.c$
 
 # Avoid Devel::Cover files.
@@ -31,5 +33,6 @@
 ^dist/
 ^makeall\.sh$
 ^tmp/
-^AnyEvent-Connection-.*
+^XML-Fast-.*
 ^run\.pl$
+^\w+\.pl$

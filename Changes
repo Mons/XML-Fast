@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.02  2010-07-17
+      Just remove dummy depencency from test
+
 0.01  Wed Jun  2 01:21:26 2010
 	- original version; created by h2xs 1.23 with options
 		-A -n XML::Fast

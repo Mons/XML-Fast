@@ -1,8 +1,7 @@
-.gitignore
 Changes
-Fast.bs
 Fast.xs
 lib/XML/Fast.pm
+LICENSE
 Makefile.PL
 MANIFEST
 MANIFEST.SKIP
