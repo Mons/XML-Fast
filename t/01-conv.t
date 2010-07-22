@@ -7,13 +7,12 @@ BEGIN {
 	eval {require Test::NoWarnings;Test::NoWarnings->import; ++$add; 1 }
 		or diag "Test::NoWarnings missed, skipping no warnings test";
 	plan tests => 26 + $add;
+	eval {require Data::Dumper;Data::Dumper::Dumper(1)}
+		and *dd = sub ($) { Data::Dumper->new([$_[0]])->Indent(0)->Terse(1)->Quotekeys(0)->Useqq(1)->Purity(1)->Dump }
+		or  *dd = \&explain;
 }
 
 use XML::Fast 'xml2hash';
-use Data::Dumper ();
-
-sub DUMP() { 0 }
-sub dd ($) { Data::Dumper->new([$_[0]])->Indent(0)->Terse(1)->Quotekeys(0)->Useqq(1)->Purity(1)->Dump }
 
 # Parsing
 

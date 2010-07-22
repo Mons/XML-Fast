@@ -397,8 +397,39 @@ void parse (char * xml, parser_state * context) {
 							context->state = CONTENT_WAIT;
 							goto next;
 						} else
+						if ( strncmp(p, "DOCTYPE", 7 ) == 0 ) {
+							p += 7;
+							//p = eat_wsp(p);
+							state = 0;
+							while(state == 0) {
+								switch(*p) {
+									case 0: context->state = DOCUMENT_ABORTED; goto eod;
+									case '[': state = 1; p++; break;
+									case '>': state = 2; p++; break;
+									default : p++;
+								}
+							}
+							if (state == 1) {
+								search = index(p,']');
+								if (search) {
+									printf("search = %s\n",search);
+									p = eat_wsp(context,search+1);
+									if (*p == '>') {
+										p++;
+										state = 2;
+									} else {
+										xml_error("Doctype not properly terminated");
+									}
+								} else {
+									xml_error("Doctype intSubset not terminated");
+								}
+							}
+							//fprintf(stderr,"after doctype: %s\n",p);
+							context->state = CONTENT_WAIT;
+							goto next;
+						} else
 						{
-							printf("fuckup after <!: %c\n",*p);
+							printf("fuckup after <!: %c (%s)\n",*p, p);
 							goto fault;
 						}
 						break;
@@ -425,7 +456,7 @@ void parse (char * xml, parser_state * context) {
 									p++;
 									if (*p == '>') {
 										p++;
-										state = 2;
+										state = 3;
 									} else {
 										printf("CB> PI not closed: %c\n",*p);
 										goto fault;
@@ -440,17 +471,23 @@ void parse (char * xml, parser_state * context) {
 							state = 2;
 						}
 						debug("CB> Got pi name state=%d next='%c'\n",state,*p);
-						if (*p == '?' && *(p+1) == '>') {
-							debug("PI correctly closed\n");
-							p+=2;
-							if (cb->piclose) cb->piclose( context->ctx, at, end - at );
-							context->state = CONTENT_WAIT;
-							goto next;
-						} else {
-							if (context->cb.die)
-								context->cb.die(context->ctx,"Processing instruction not terminated");
-							goto fault;
+						if (state == 2) {
+							if (*p == '?' && *(p+1) == '>') {
+								debug("PI correctly closed\n");
+								p+=2;
+								state = 3;
+							} else {
+								if (context->cb.die)
+									context->cb.die(context->ctx,"Processing instruction not terminated");
+								goto fault;
+							}
 						}
+						if (state != 3)
+							context->cb.die(context->ctx,"Bad state after processing instruction: %d",state);
+						if (cb->piclose) cb->piclose( context->ctx, at, end - at );
+						context->state = CONTENT_WAIT;
+						goto next;
+					
 					case '/': // </node>
 						context->state = TAG_CLOSE;
 						p++;

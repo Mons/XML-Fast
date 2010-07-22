@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.03  2010-07-22
+      Fix parsing of <!DOCTYPE ...> (was faulting)
+
 0.02  2010-07-17
       Just remove dummy depencency from test
 

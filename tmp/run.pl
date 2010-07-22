@@ -10,6 +10,7 @@ use XML::Fast;
 use Devel::Leak;
 my $handle;
 my $data;
+
 =for rem
 say dumper(XML::Hash::LX::xml2hash( q{<?xml version="1.0" encoding="cp1251" ?>
 <!DOCTYPE test1 [
@@ -63,6 +64,13 @@ my $xml4 = q{
 my $xml5 = q{
 	<root>&#9762;<sub />&#x2622</root>
 };
+my $xml6 = q{<?xml ?>
+	<!DOCTYPE greeting [
+		<!ELEMENT greeting (#PCDATA)>
+	]>
+	<greeting>Hello, world!</greeting>
+};
+
 my $bigxml;
 {
 no utf8;
@@ -90,6 +98,10 @@ $bigxml = "<?xml version=\"1.0\"?>".
 			"</test1 >\n";
 }
 if (1){
+say dumper(
+	XML::Fast::xml2hash($xml6)
+);
+exit if $ARGV[0] eq 'dt';
 say dumper(
 	XML::Fast::xml2hash(q{<test></test></test>}, join => undef)
 );
