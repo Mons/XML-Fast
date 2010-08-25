@@ -410,7 +410,7 @@ void parse (char * xml, parser_state * context) {
 								}
 							}
 							if (state == 1) {
-								search = index(p,']');
+								search = strchr(p,']');
 								if (search) {
 									printf("search = %s\n",search);
 									p = eat_wsp(context,search+1);
@@ -492,7 +492,7 @@ void parse (char * xml, parser_state * context) {
 						context->state = TAG_CLOSE;
 						p++;
 						at = p;
-						search = index(p,'>');
+						search = strchr(p,'>');
 						if (search) {
 							p = search + 1;
 							search = eatback_wsp(context, search-1)+1;
