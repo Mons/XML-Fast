@@ -9,13 +9,27 @@
 #ifndef safemalloc
 #define safemalloc malloc
 #endif
+#ifndef safecalloc
+#define safecalloc calloc
+#endif
 #ifndef safefree
 #define safefree free
 #endif
 #ifndef saferealloc
 #define saferealloc realloc
 #endif
-
+#ifndef Newx
+#define Newx(v,n,t) (v = ( (t*)safemalloc((size_t)((n)*sizeof(t))) ) )
+#endif
+#ifndef Newxz
+#define Newxz(v,n,t) (v = ( (t*)safecalloc((n),sizeof(t)) ) )
+#endif
+#ifndef Renew
+#define Renew(v,n,t) (v = ( (t*)saferealloc((void *)(v),(size_t)((n)*sizeof(t))) ) )
+#endif
+#ifndef Safefree
+#define Safefree(d) safefree((void *)(d))
+#endif
 
 #define PROCESSING_INSTRUCTION 0x0001
 #define TEXT_NODE              0x0002

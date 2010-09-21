@@ -154,8 +154,8 @@ static inline void DESTROY (parsestate *ctx) {
 			on_tag_close(ctx,ctx->chain->name,ctx->chain->len);
 		}
 	}
-	if (ctx->hchain) { safefree(ctx->hchain); ctx->hchain = 0; }
-	if (ctx->chain)  { safefree(ctx->chain); ctx->chain = 0; }
+	if (ctx->hchain) { Safefree(ctx->hchain); ctx->hchain = 0; }
+	if (ctx->chain)  { Safefree(ctx->chain); ctx->chain = 0; }
 }
 
 static inline void my_croak(parsestate *ctx, char * format, ...) {
@@ -506,20 +506,22 @@ void on_tag_open(void * pctx, char * data, unsigned int length) {
 	if (ctx->depth >= ctx->chainsize) {
 		warn("XML depth too high. Consider increasing `_max_depth' to at more than %d to avoid reallocations",ctx->chainsize);
 		ctx->chainsize *= 2;
-		ctx->hchain     = saferealloc( ctx->hchain, sizeof(ptr_t) * ctx->chainsize );
-		ctx->chain      = saferealloc( ctx->chain,  sizeof(xml_node) * ctx->chainsize );
+		Renew( ctx->hchain, ctx->chainsize, HV* );
+		Renew( ctx->chain, ctx->chainsize, xml_node);
 	}
 	ctx->chain[ctx->depth].len = length;
 	ctx->chain[ctx->depth].name = data;
 	if (ctx->flags & TAG_MATCH) {
 		if (ctx->depth == 0) {
-			ctx->chain[ctx->depth].fullname = safemalloc( ( ctx->chain[ctx->depth].fulllen = length + 1 ) + 1);
+			ctx->chain[ctx->depth].fulllen = length + 1;
+			Newx(ctx->chain[ctx->depth].fullname, ctx->chain[ctx->depth].fulllen + 1, char);
 			ctx->chain[ctx->depth].fullname[0] = '/';
 			memcpy(ctx->chain[ctx->depth].fullname+1,data,length);
 			ctx->chain[ctx->depth].fullname[length+1] = 0;
 			//printf("Fullame = %s\n",ctx->chain[ctx->depth].fullname);
 		} else {
-			ctx->chain[ctx->depth].fullname = safemalloc( ( ctx->chain[ctx->depth].fulllen = ctx->chain[ctx->depth - 1].fulllen + length + 1 ) + 1 );
+			ctx->chain[ctx->depth].fulllen = ctx->chain[ctx->depth - 1].fulllen + length + 1;
+			Newx(ctx->chain[ctx->depth].fullname, ctx->chain[ctx->depth].fulllen + 1, char);
 			memcpy(
 				ctx->chain[ctx->depth].fullname,
 				ctx->chain[ctx->depth - 1].fullname,
@@ -905,8 +907,8 @@ _xml2hash(xml,conf)
 		} else{
 			ctx.hcurrent = newHV();
 			
-			ctx.chain    = safemalloc( sizeof(xml_node) * ctx.chainsize);
-			ctx.hchain   = safemalloc( sizeof(ptr_t) * ctx.chainsize);
+			Newx(ctx.chain, ctx.chainsize, xml_node);
+			Newx(ctx.hchain, ctx.chainsize, HV*);
 			ctx.depth    = -1;
 			
 			RV  = sv_2mortal(newRV_noinc( (SV *) ctx.hcurrent ));
