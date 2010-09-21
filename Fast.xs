@@ -583,8 +583,9 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	// Text joining
 	if (ctx->text) {
 		// we may have stored text node
-		if ((text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0)) && SvOK(*text)) {
-			if (SvTYPE( SvRV(*text) ) == SVt_PVAV) {
+		text = hv_fetch(ctx->hcurrent, SvPV_nolen(ctx->text), SvCUR(ctx->text), 0);
+		if (text && SvOK(*text)) {
+			if (SvROK(*text) && SvTYPE( SvRV(*text) ) == SVt_PVAV) {
 				AV *av = (AV *) SvRV( *text );
 				SV **val;
 				I32 len = 0, avlen = av_len(av) + 1;
