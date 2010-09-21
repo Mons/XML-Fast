@@ -104,6 +104,7 @@ struct entityref{
 //Max string lengh for entity name, with trailing '\0'
 
 extern void init_entities();
+extern void uninit_entities();
 extern void parse (char * xml, parser_state * state);
 
 #endif

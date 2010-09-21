@@ -18,5 +18,6 @@ WriteMakefile(
 	$AUTHOR ? (
 		CCFLAGS           => '-Wunused -std=c99', # only author mode
 	) : (),
+	OPTIMIZE		  => '-g',
 	OBJECT            => 'Fast.o xmlfast.o', # link all the C files too
 );

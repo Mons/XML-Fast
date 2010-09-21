@@ -66,6 +66,8 @@ static char *STATE[DOCUMENT_ABORTED+1] = {
 	,"DOCUMENT_ABORTED"
 };
 
+static void recursive_free_subentities(struct entityref* ent);
+
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents);
 void calculate(char *prefix, unsigned char offset, entity *strings, struct entityref *ents) {
 	unsigned char counts[256];
@@ -120,6 +122,17 @@ void calculate(char *prefix, unsigned char offset, entity *strings, struct entit
 void init_entities() {
 	calculate("",0,entitydef,&entities);
 	return;
+}
+
+void uninit_entities() {
+	recursive_free_subentities(&entities);
+}
+
+static void recursive_free_subentities(struct entityref* ent) {
+	for (int i = 0; i < ent->children; i++)
+		recursive_free_subentities( &ent->more[i] );
+	Safefree(ent->more);
+	ent->children = 0;
 }
 
 static inline char * eat_wsp(parser_state * context, char *p) {

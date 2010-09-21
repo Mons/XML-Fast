@@ -785,6 +785,12 @@ BOOT:
 	init_entities();
 
 void
+END()
+	PROTOTYPE:
+	CODE:
+		uninit_entities();
+
+void
 _test()
 	CODE:
 		dTHX;
