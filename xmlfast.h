@@ -99,7 +99,7 @@ struct entityref{
 
 // BUFFER used for some dummy copy operations. May be safely reduced to smaller numbers
 #define BUFFER 4096
-#define xml_error(x) do { printf("Error at char %d (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
+#define xml_error(x) do { printf("Error at char %td (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
 
 //Max string lengh for entity name, with trailing '\0'
 
