@@ -98,6 +98,14 @@ $bigxml = "<?xml version=\"1.0\"?>".
 			"</test1 >\n";
 }
 if (1){
+for (<t/reports/*>) {
+	warn "read file $_";
+	my $xxml = do { local $/; open my $f,'<',$_; <$f> };
+	warn "run parse $_";
+	my $xx = XML::Fast::xml2hash($xxml);
+	warn "success $_";
+}
+exit if $ARGV[0] eq 'reports';
 say dumper(
 	XML::Fast::xml2hash($xml6)
 );
