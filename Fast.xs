@@ -782,15 +782,6 @@ _test()
 
 MODULE = XML::Fast		PACKAGE = XML::Fast
 
-BOOT:
-	init_entities();
-
-void
-END()
-	PROTOTYPE:
-	CODE:
-		uninit_entities();
-
 void
 _test()
 	CODE:

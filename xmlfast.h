@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include "entities.h"
 
 #ifndef safemalloc
 #define safemalloc malloc
@@ -89,22 +90,12 @@ typedef struct {
 	void          * ctx;          // context for the caller, black box for us
 } parser_state;
 
-struct entityref{
-	char         c;
-	char         *entity;
-	unsigned int length;
-	unsigned     children;
-	struct entityref    *more;
-};
-
 // BUFFER used for some dummy copy operations. May be safely reduced to smaller numbers
 #define BUFFER 4096
 #define xml_error(x) do { printf("Error at char %td (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
 
 //Max string lengh for entity name, with trailing '\0'
 
-extern void init_entities();
-extern void uninit_entities();
 extern void parse (char * xml, parser_state * state);
 
 #endif
