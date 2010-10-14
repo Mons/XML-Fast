@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.05  2010-10-14
+      - Fix dummy warning
+
 0.04  2010-10-14
       - Tests
       - Replace index() with chrchr()

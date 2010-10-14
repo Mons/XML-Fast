@@ -394,7 +394,7 @@ void on_bytes_charset(void * pctx, char * data, unsigned int length) {
 #endif
 	parsestate *ctx = pctx;
 	if (!ctx->textval && !length) {
-		my_warn(ctx,"Called on_bytes with empty text and empty body");
+		//my_warn(ctx,"Called on_bytes with empty text and empty body");
 	}
 	SV *tmp = newSVpvn(data, length);
 	xml_sv_decode(ctx,tmp);
