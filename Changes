@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.06  2010-10-15
+      - Fix autoclose for second level (like <x><y></x>)
+
 0.05  2010-10-14
       - Fix dummy warning
 

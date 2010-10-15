@@ -142,16 +142,33 @@ void on_bytes_charset_part(void * pctx, char * data, unsigned int length);
 void on_bytes_charset(void * pctx, char * data, unsigned int length);
 void on_tag_close(void * pctx, char * data, unsigned int length);
 
+static inline void my_warn(parsestate *ctx, char * format, ...) {
+	//TODO: free all
+	if(!(ctx->flags & EMIT_WARNS)) return;
+	va_list va;
+	va_start(va,format);
+	SV *text = sv_2mortal(newSVpvn("",0));
+	sv_vcatpvf(text, format, &va);
+	va_end(va);
+	warn("%s",SvPV_nolen(text));
+}
+
 static inline void DESTROY (parsestate *ctx) {
 	if(ctx->encode)   { SvREFCNT_dec(ctx->encode);   ctx->encode = 0;   }
 	if(ctx->textval)  { SvREFCNT_dec(ctx->textval);  ctx->textval = 0;  }
 	if(ctx->pi)       { SvREFCNT_dec(ctx->pi);       ctx->pi = 0;       }
 	if(ctx->attrname) { SvREFCNT_dec(ctx->attrname); ctx->attrname = 0; }
-	if(ctx->array)    { SvREFCNT_dec(ctx->array);    ctx->array = 0;    }
+	if(ctx->array)    { SvREFCNT_dec(ctx->array);   ctx->array = 0;    }
 	if(ctx->depth > -1) {
+		//fprintf(stderr,"DESTROY Free depth %d\n",ctx->depth);
+		int currdepth = ctx->depth;
 		while(ctx->depth > -1) {
-			printf("Free depth %d\n",ctx->depth);
+			//fprintf(stderr,"Free depth %d\n",ctx->depth);
 			on_tag_close(ctx,ctx->chain->name,ctx->chain->len);
+			if (currdepth == ctx->depth) {
+				my_warn(ctx,"Recursion during autoclose tags. depth=%d\n",ctx->depth);
+				break;
+			}
 		}
 	}
 	if (ctx->hchain) { Safefree(ctx->hchain); ctx->hchain = 0; }
@@ -167,16 +184,6 @@ static inline void my_croak(parsestate *ctx, char * format, ...) {
 	sv_vcatpvf(text, format, &va);
 	va_end(va);
 	croak("%s",SvPV_nolen(text));
-}
-static inline void my_warn(parsestate *ctx, char * format, ...) {
-	//TODO: free all
-	if(!(ctx->flags & EMIT_WARNS)) return;
-	va_list va;
-	va_start(va,format);
-	SV *text = sv_2mortal(newSVpvn("",0));
-	sv_vcatpvf(text, format, &va);
-	va_end(va);
-	warn("%s",SvPV_nolen(text));
 }
 
 SV * find_encoding(char * encoding) {
@@ -563,11 +570,13 @@ void on_tag_close(void * pctx, char * data, unsigned int length) {
 	}
 	if ( (ctx->chain[ctx->depth].len != length) || (memcmp( ctx->chain[ctx->depth].name, data, length) != 0) ) {
 		int close, depth = ctx->depth;
-		my_warn(ctx,"Unbalanced close tag '%s' depth=%d\n", SvPV_nolen(tag),depth);
-		while (depth > 0) {
+		my_warn(ctx,"Unbalanced close tag <%s> depth=%d\n", SvPV_nolen(tag),depth);
+		// checkdepth is used to avoid infinite loops on errors with auto_closing
+		int checkdepth = depth + 10;
+		while (depth > -1 && checkdepth-- > 0) {
 			if ( (ctx->chain[depth].len == length) && (memcmp( ctx->chain[depth].name, data, length) == 0)) {
 				for (close = ctx->depth; close >= depth; close--) {
-					//printf("Force tag close %s\n",ctx->chain[close].name);
+					my_warn(ctx,"Force tag close <%.*s> at depth %u", ctx->chain[close].len, ctx->chain[close].name, close);
 					on_tag_close(pctx, ctx->chain[close].name, (STRLEN)ctx->chain[close].len);
 				}
 				depth = -1;
