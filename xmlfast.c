@@ -76,7 +76,7 @@ static inline char * eatback_wsp(parser_state * context, char *p) {
 
 static inline char *parse_entity (parser_state * context, char *p) {
 	//return p+1;
-	struct entityref *cur_ent;
+	entityref_t *cur_ent;
 	char *at;
 	at = p;
 	unsigned int i;
@@ -124,7 +124,7 @@ static inline char *parse_entity (parser_state * context, char *p) {
 		}
 		return p;
 	}
-	cur_ent = &entities;
+	cur_ent = entities;
 	next_ent:
 		if (*p == 0) return 0;
 		p++;
