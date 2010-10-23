@@ -84,7 +84,7 @@ typedef struct {
 		char *kv = SvPV_nolen(key); \
 		int   kl = SvCUR(key); \
 		if( exists = hv_fetch(hv, kv, kl, 0) ) { \
-			if (SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
+			if ( SvROK(*exists) && SvTYPE( SvRV(*exists) ) == SVt_PVAV) { \
 				AV *av = (AV *) SvRV( *exists ); \
 				av_push( av, sv ); \
 			} \

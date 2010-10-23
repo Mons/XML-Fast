@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.08  2010-10-24
+      - One more SvRV checking fix
+
 0.07  2010-10-15
       - Fix dummy warning (again ;)
 
