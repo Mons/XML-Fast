@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.09  2010-11-27
+      - Added license to META
+
 0.08  2010-10-24
       - One more SvRV checking fix
 

@@ -20,4 +20,5 @@ WriteMakefile(
 	) : (),
 	OPTIMIZE		  => '-g',
 	OBJECT            => 'Fast.o xmlfast.o', # link all the C files too
+	META_ADD          => { license => 'perl' },
 );
