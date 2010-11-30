@@ -4,6 +4,10 @@
 #include "XSUB.h"
 
 #include "ppport.h"
+
+#define XML_DEBUG 0
+#define XML_DEVEL 0
+
 #include "xmlfast.h"
 
 #include <stdlib.h>
@@ -15,8 +19,6 @@
 typedef void * ptr_t;
 #endif
 
-#define XML_DEBUG 0
-#define XML_DEVEL 0
 #ifndef PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8
 #define PERL_ARGS_ASSERT_SV_RECODE_TO_UTF8
 #endif
@@ -764,7 +766,7 @@ void on_die(void * pctx, char * format, ...) {
 	va_start(va,format);
 	ctx->error = sv_2mortal(newSVpvn("",0));
 	sv_vcatpvf(ctx->error, format, &va);
-	warn("got a die with %s",SvPV_nolen(ctx->error));
+	//warn("got a die with %s",SvPV_nolen(ctx->error));
 	va_end(va);
 }
 

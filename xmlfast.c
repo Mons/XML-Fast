@@ -189,7 +189,7 @@ static inline char *parse_attrs(char *p, parser_state * context) {
 					//printf("Want attr name, char='%c'\n",*p);
 					while(state == 0) {
 						switch(*p) {
-							case 0   : printf("Document aborted\n");return 0;
+							case 0   : if (context->cb.die) context->cb.die(ctx,"Document aborted"); return 0;
 							case_wsp : p = eat_wsp(context, p); break;
 							case '>' :
 							case '?' :
@@ -204,12 +204,12 @@ static inline char *parse_attrs(char *p, parser_state * context) {
 					//printf("Want = (%c)\n",*p);
 					while(state == 1) {
 						switch(*p) {
-							case 0   : printf("Document aborted\n");return 0;
+							case 0   : if (context->cb.die) context->cb.die(ctx,"Document aborted");return 0;
 							case_wsp :
 								end = p;
 								p = eat_wsp(context, p);
 								if (*p != '=') {
-									printf("No = after whitespace while reading attr name\n");
+									if (context->cb.die) context->cb.die(ctx,"No = after whitespace while reading attr name");
 									return 0;
 								}
 							case '=':
@@ -227,7 +227,7 @@ static inline char *parse_attrs(char *p, parser_state * context) {
 					//printf("Want quote (%c)\n",*p);
 					while(state == 2) {
 						switch(*p) {
-							case 0   : printf("Document aborted\n");return 0;
+							case 0   : if (context->cb.die) context->cb.die(ctx,"Document aborted");return 0;
 							case '\'':
 							case '"':
 								if (!wait) { // got open quote
@@ -253,7 +253,7 @@ static inline char *parse_attrs(char *p, parser_state * context) {
 										break;
 									}
 								} else {
-									printf("Not waiting for & in state 2\n");
+									if (context->cb.die) context->cb.die(ctx,"Not waiting for & in state 2");
 									return 0;
 								}
 							default: p++;
@@ -261,7 +261,7 @@ static inline char *parse_attrs(char *p, parser_state * context) {
 					}
 					break;
 				default:
-					printf("default, state=%d, char='%c'\n",state, *p);
+					if (context->cb.warn) context->cb.warn(ctx, "default, state=%d, char='%c'\n",state, *p);
 					return 0;
 			}
 		}
@@ -338,7 +338,7 @@ void parse (char * xml, parser_state * context) {
 							if (state == 1) {
 								search = strchr(p,']');
 								if (search) {
-									printf("search = %s\n",search);
+									//printf("search = %s\n",search);
 									p = eat_wsp(context,search+1);
 									if (*p == '>') {
 										p++;
@@ -355,7 +355,7 @@ void parse (char * xml, parser_state * context) {
 							goto next;
 						} else
 						{
-							printf("fuckup after <!: %c (%s)\n",*p, p);
+							if (context->cb.warn) context->cb.warn(ctx,"Malformed document after <!: %c (%s)\n",*p, p);
 							goto fault;
 						}
 						break;
@@ -374,7 +374,7 @@ void parse (char * xml, parser_state * context) {
 										state = 1;
 										break;
 									} else {
-										printf("CB> Bad pi opening\n");
+										if (context->cb.warn) context->cb.warn(ctx,"Bad PI opening");
 										goto fault;
 									}
 								case '?':
@@ -384,7 +384,8 @@ void parse (char * xml, parser_state * context) {
 										p++;
 										state = 3;
 									} else {
-										printf("CB> PI not closed: %c\n",*p);
+										if (context->cb.warn) context->cb.warn(ctx,"PI not closed: %c", *p);
+										//printf("CB> PI not closed: %c\n",*p);
 										goto fault;
 									}
 									break;
@@ -490,6 +491,7 @@ void parse (char * xml, parser_state * context) {
 					default: //<node...>
 						state = 0;
 						context->state = TAG_OPEN;
+						debug("open tag: %s",p);
 						while(state < 3) {
 							switch(state) {
 								case 0:
@@ -519,6 +521,7 @@ void parse (char * xml, parser_state * context) {
 											default: p++;
 										}
 									}
+									len = p - at;
 									/*
 									if (context->depth + 1 > context->chain_size) {
 										seek = context->root;
@@ -533,10 +536,10 @@ void parse (char * xml, parser_state * context) {
 									context->chain->name[context->chain->len] = '\0';
 									if (cb->tagopen) cb->tagopen( ctx, at, context->chain->len );
 									*/
+									debug("open tag: %s -> %s (%d)", at, p, p - at);
 									if (cb->tagopen) cb->tagopen( ctx, at, p - at );
 									break;
 								case 1:
-									len = p - at;
 									if (search = parse_attrs(p,context)) {
 										p = search;
 										state = 2;
@@ -544,6 +547,7 @@ void parse (char * xml, parser_state * context) {
 										goto fault;
 									}
 								case 2:
+									debug("close tag now: %s -> %s (%d)", at, p, p - at);
 									while(state == 2) {
 										switch(*p) {
 											case 0   : goto eod;
@@ -620,7 +624,7 @@ void parse (char * xml, parser_state * context) {
 				break;
 		}
 	}
-	printf("parse done\n");
+	//printf("parse done\n");
 	//Safefree(context->root);
 	return;
 	
@@ -628,7 +632,7 @@ void parse (char * xml, parser_state * context) {
 		//printf("End of document, context->state=%d\n",context->state);
 		switch(context->state) {
 			case DOCUMENT_START:
-				printf("Empty document\n");
+				if (context->cb.warn) context->cb.warn(ctx,"Empty document");
 				return;
 			case LT_OPEN:
 			case COMMENT_OPEN:
@@ -640,7 +644,7 @@ void parse (char * xml, parser_state * context) {
 					context->cb.die(context->ctx,"Bad document end, state = %s",STATE[context->state]);
 				break;
 			case TEXT_READ:
-				printf("Need to call text cb at the end of document\n");
+				if (context->cb.warn) context->cb.warn(ctx,"Need to call text cb at the end of document");
 				break;
 			case CONTENT_WAIT:
 			/*
@@ -653,14 +657,10 @@ void parse (char * xml, parser_state * context) {
 			*/
 				break;
 			default:
-				printf("Bad context->state %d at the end of document\n",context->state);
+				if (context->cb.warn) context->cb.warn(ctx,"Bad context->state %d at the end of document\n",context->state);
 		}
 	
 	fault:
 	//Safefree(context->root);
 	return;
-}
-
-void free_state(parser_state * context) {
-	//Safefree(root);
 }

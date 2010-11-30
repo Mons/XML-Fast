@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Fast.
 
+0.09_01 2010-11-20
+      - Make fixes for XML like '<a/>' (Thanks to Chad <chadh@pobox.com>)
+
 0.09  2010-11-27
       - Added license to META
 
