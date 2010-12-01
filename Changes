@@ -1,5 +1,9 @@
 Revision history for Perl extension XML::Fast.
 
+0.10  2010-12-01
+      - Add tests for broken xml's
+      - Fix some error reporting
+
 0.09_01 2010-11-20
       - Make fixes for XML like '<a/>' (Thanks to Chad <chadh@pobox.com>)
 

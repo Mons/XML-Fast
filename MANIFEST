@@ -13,11 +13,13 @@ t/01-conv.t
 t/02-doctype.t
 t/03-reports.t
 t/04-badxml.t
+t/05-wrongs.t
 t/badxml/01.xml
 t/badxml/02.xml
 t/reports/01.xml
 t/reports/02.xml
 t/reports/03.xml
 t/reports/04.xml
+t/reports/05.xml
 xmlfast.c
 xmlfast.h
