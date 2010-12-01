@@ -955,7 +955,7 @@ _xml2hash(xml,conf)
 		}
 		parse(xml,&state);
 		
-		if (ctx.depth > -1) {
+		if (ctx.depth > -1 && !ctx.error) {
 			ctx.error = sv_2mortal(newSVpv("Unbalanced tags",0));
 		}
 		

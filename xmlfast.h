@@ -92,7 +92,13 @@ typedef struct {
 
 // BUFFER used for some dummy copy operations. May be safely reduced to smaller numbers
 #define BUFFER 4096
-#define xml_error(x) do { fprintf(stderr,"Error at char %td (%c): %s\n", p-xml, *p, x);goto fault; } while (0)
+#define xml_error(x) do { \
+	if (context->cb.die) \
+		context->cb.die(context->ctx,"Error at char %d (%1s): %s", p-xml, *p ? p : "\\0", x); \
+	else \
+		fprintf(stderr,"Error at char %d (%1s): %s\n", p-xml, *p ? p : "\\0", x); \
+	goto fault; \
+ } while (0)
 
 //Max string lengh for entity name, with trailing '\0'
 
