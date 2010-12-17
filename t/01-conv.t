@@ -151,8 +151,8 @@ our $data;
 
 	{
 		is_deeply
-			$data = xml2hash("<?xml encoding='windows-1251'?><text>тест&#x2622;</text>"),
-			{text => "\x{442}\x{435}\x{441}\x{442}\x{2622}"},
+			$data = xml2hash("<?xml encoding='windows-1251'?><text>тест&#x2622;\"&quot;</text>"),
+			{text => "\x{442}\x{435}\x{441}\x{442}\x{2622}\"\""},
 			'1251 + high entity (char mode)',
 		or diag explain($data),"\n";
 		ok utf8::is_utf8($data->{text}), "utf flag set";

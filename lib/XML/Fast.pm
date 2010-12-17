@@ -8,7 +8,7 @@ use Encode;
 use base 'Exporter';
 our @EXPORT_OK = our @EXPORT = qw( xml2hash );
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use XSLoader;
 XSLoader::load('XML::Fast', $VERSION);
