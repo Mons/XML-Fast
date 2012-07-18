@@ -4,12 +4,85 @@ no warnings qw(internal FATAL);
 use warnings qw(internal);
 use Data::Dumper;
 use ExtUtils::testlib;
-use XML::Fast;
+use XML::Fast ();
+use XML::Hash::LX ();
 #use XML::Bare;
 #use XML::Hash::LX ();
-use Devel::Leak;
+#use Devel::Leak;
 my $handle;
 my $data;
+
+my $x1 = XML::Hash::LX::xml2hash("<test><child>1</child><child>2</child></test>");
+
+=for rem
+my $st = {
+	node => {
+		test => 1,
+		-attr => 'xx',
+	},
+};
+=cut
+
+my $st = {
+	node => {
+		test => 1,
+		-attr => 'xx',
+		nested => [
+			{ -attr1 => "some" },
+			{ sub => undef, },
+			{ -attr2 => "another" },
+			#[
+			#	{ -attr3 => "test", -attr4 => [ " x ", { test => 1 }, "y" ] },
+			#],
+		],
+		
+		iq => {
+			-type => 'get',
+			query => {
+				-xmlns => 'disco',
+				feature => [
+					{ -var => "1" },
+					{ -var => "2" },
+				],
+			}
+		}
+	}
+};
+
+$st = {
+	node => [
+		{ b => "<2'\"&111&>" },
+		{ -b => "<<222&2&" },
+		{ a => 3 },
+		{ c => 1 },
+		{ '#text' => 'text' },
+		{ '#cdata' => 'cdata' },
+		{ '#comm' => 'comment' },
+	],
+} if 1;
+
+=for rem
+
+nested => {
+	-attr1
+	-attr2
+	child => [
+		1,
+		2,
+		3,
+		
+	]
+}
+
+=cut
+
+say XML::Hash::LX::hash2xml($st, cdata => '#cdata', comm => '#comm' );
+#say XML::Hash::LX::hash2xml($x1, {});
+say XML::Fast::_hash2xml($st, { cdata => '#cdata', comm => '#comm' });
+#XML::Fast::_hash2xml($x1, {});
+#XML::Fast::_hash2xml({ node => { -attr => undef, '#cdata' => undef, '/' => undef, x=>undef } }, { cdata => '#cdata', comm => '/' });
+
+__END__
 
 =for rem
 say dumper(XML::Hash::LX::xml2hash( q{<?xml version="1.0" encoding="cp1251" ?>

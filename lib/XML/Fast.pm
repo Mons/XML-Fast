@@ -2,13 +2,13 @@ package XML::Fast;
 
 use 5.008008;
 use strict;
-use warnings;
+use warnings;no warnings 'uninitialized';
 use Encode;
 
 use base 'Exporter';
-our @EXPORT_OK = our @EXPORT = qw( xml2hash );
+our @EXPORT_OK = our @EXPORT = qw( xml2hash hash2xml );
 
-our $VERSION = '0.11';
+our $VERSION = '0.13';
 
 use XSLoader;
 XSLoader::load('XML::Fast', $VERSION);
@@ -28,11 +28,26 @@ sub xml2hash($;%) {
 	_xml2hash($xml,\%args);
 }
 
+sub hash2xml($;%) {
+	my $xml = shift;
+	my %args = (
+		order  => 0,        # not impl
+		attr   => '-',      # ok
+		text   => '#text',  # ok
+		join   => '',       # ok
+		trim   => 1,        # ok
+		cdata  => undef,    # ok + fallback -> text
+		comm   => undef,    # ok
+		@_
+	);
+	_hash2xml($xml,\%args);
+}
+
 1;
 __END__
 =head1 NAME
 
-XML::Fast - Simple and very fast XML to hash conversion
+XML::Fast - Simple and very fast XML - hash conversion
 
 =head1 SYNOPSIS
 
@@ -101,6 +116,8 @@ Here is some features and principles:
 =head1 EXPORT
 
 =head2 xml2hash $xml, [ %options ]
+
+=head2 hash2xml $hash, [ %options ]
 
 =head1 OPTIONS
 

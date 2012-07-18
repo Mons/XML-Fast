@@ -1,7 +1,10 @@
 #!/use/bin/perl -w
 
+
 use strict;
 use Test::More;
+plan skip_all => "Not now";
+__END__
 BEGIN {
 	my $add = 0;
 	eval {require Test::NoWarnings;Test::NoWarnings->import; ++$add; 1 }
@@ -12,7 +15,7 @@ BEGIN {
 		or  *dd = \&explain;
 }
 
-use XML::Fast 'xml2hash';
+use XML::Fast 'hash2xml';
 
 # Parsing
 

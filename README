@@ -1,5 +1,5 @@
 NAME
-    XML::Fast - Simple and very fast XML to hash conversion
+    XML::Fast - Simple and very fast XML - hash conversion
 
 SYNOPSIS
       use XML::Fast;
@@ -65,6 +65,7 @@ RATIONALE
 
 EXPORT
   xml2hash $xml, [ %options ]
+  hash2xml $hash, [ %options ]
 OPTIONS
     order [ = 0 ]
         Not implemented yet. Strictly keep the output order. When enabled,
