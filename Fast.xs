@@ -341,6 +341,7 @@ void on_comment(void * pctx, char * data,unsigned int length) {
 //TODO: Separate on_bytes/on_uchar for non-utf mode
 
 void on_pi_attr(parsestate *ctx) {
+	//warn("pi attr '%-.*s'", SvCUR(ctx->attrname), SvPVX(ctx->attrname));
 			if (
 				(SvCUR(ctx->attrname) == 8) &&
 				(memcmp(SvPV_nolen(ctx->attrname), "encoding", 8) == 0 )
@@ -362,7 +363,9 @@ void on_pi_attr(parsestate *ctx) {
 			} else {
 				//printf("PI %s, attr %s='%s'\n",SvPV_nolen(ctx->pi), SvPV_nolen(ctx->attrname),SvPV_nolen(ctx->textval) );
 			}
+			sv_2mortal(ctx->attrname);
 			sv_2mortal(ctx->textval);
+			ctx->attrname = ctx->textval = 0;
 }
 
 static inline SV * mkchr(UV chr) {
@@ -388,6 +391,8 @@ void on_uchar(void * pctx, wchar_t chr) {
 #endif
 	parsestate *ctx = pctx;
 	dTHX;
+	if ( !( ctx->attrname || ctx->text ) ) return;
+	
 	if (!ctx->utf8 && ctx->bytes && !UTF8_IS_INVARIANT(chr) ) {
 		if (!ctx->encode)
 			my_croak(ctx,"Can't decode entities in non-utf8, bytes mode");
@@ -433,6 +438,7 @@ void on_bytes_charset_part(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_bytes_charset_part");
 #endif
 	parsestate *ctx = pctx;
+	if ( !( ctx->attrname || ctx->text ) ) return;
 	if (!length) return;
 	SV *tmp = newSVpvn(data, length);
 	xml_sv_decode(ctx,tmp);
@@ -452,6 +458,7 @@ void on_bytes_charset(void * pctx, char * data, unsigned int length) {
 	//if (!ctx->textval && !length) {
 	//	my_warn(ctx,"Called on_bytes with empty text and empty body");
 	//}
+	if ( !( ctx->attrname || ctx->text ) ) return;
 	SV *tmp = newSVpvn(data, length);
 	xml_sv_decode(ctx,tmp);
 	if (ctx->textval) {
@@ -481,6 +488,9 @@ void on_bytes_part(void * pctx, char * data, unsigned int length) {
 	if (!pctx) croak("Context not passed to on_bytes_part");
 #endif
 	parsestate *ctx = pctx;
+	
+	if ( !( ctx->attrname || ctx->text ) ) return;
+	
 	if (ctx->textval) {
 		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
 	} else {
@@ -496,6 +506,8 @@ void on_bytes(void * pctx, char * data, unsigned int length) {
 	//if (!ctx->textval && !length) {
 	//	my_warn(ctx,"Called on_bytes with empty text and empty body");
 	//}
+	if ( !( ctx->attrname || ctx->text ) ) return;
+	
 	if (ctx->textval) {
 		if (length > 0) { sv_catpvn(ctx->textval, data, length); }
 	} else {
@@ -774,13 +786,15 @@ void on_attr_name(void * pctx, char * data,unsigned int length) {
 	if (ctx->textval) {
 		my_croak(ctx,"Have textval=%s, while called attrname\n",SvPV_nolen(ctx->textval));
 	}
+	//warn("Called attrname on %s '%-.*s'=",ctx->pi ? "pi" : "common", length,data);
 	if (ctx->attrname) {
-		my_croak(ctx,"Called attrname, while have attrname=%s\n",SvPV_nolen(ctx->attrname));
+		my_croak(ctx,"Called attrname '%-.*s'=, while have attrname='%-.*s'\n",length,data,SvCUR(ctx->attrname),SvPVX(ctx->attrname));
 	}
 	if (ctx->pi) {
 		ctx->attrname = newSVpvn(data,length);
 	} else {
 		if( ctx->attr ) {
+			//warn("What TF is attr??"); attr prefix
 			ctx->attrname = newSV(length + SvCUR(ctx->attr));
 			sv_copypv(ctx->attrname, ctx->attr);
 			sv_catpvn(ctx->attrname, data, length);
@@ -1179,10 +1193,12 @@ _xml2hash(xml,conf)
 			}
 		}
 		
-		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
-			ctx.attr = *key;
+		if ((key = hv_fetch(conf, "attr", 4, 0))) {
+			if (SvOK(*key) && SvCUR(*key) > 0 ) { // defined and length
+				ctx.attr = *key;
+			}
 		}
-		if ((key = hv_fetch(conf, "text", 4, 0)) && SvPOK(*key)) {
+		if ((key = hv_fetch(conf, "text", 4, 0)) && SvOK(*key)) {
 			ctx.text = *key;
 		}
 		if ((key = hv_fetch(conf, "join", 4, 0)) && SvPOK(*key)) {
@@ -1272,11 +1288,9 @@ _xml2hash(xml,conf)
 			else if(ctx.text)
 				state.cb.cdata        = on_bytes;
 			
-			if(ctx.text) {
-				state.cb.bytes        = on_bytes;
-				state.cb.bytespart    = on_bytes_part;
-				state.cb.uchar        = on_uchar;
-			}
+			state.cb.bytes        = on_bytes;
+			state.cb.bytespart    = on_bytes_part;
+			state.cb.uchar        = on_uchar;
 			
 			if (!(ctx.flags & MODE_TRIM))
 				state.save_wsp     = 1;
@@ -1325,6 +1339,7 @@ _hash2xml(hash,conf)
 		
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
 			ctx.attr = SvPV_nolen(*key);
+			warn ("Set attr to '%s'", ctx.attr);
 		} else {
 			ctx.attr = "-";
 		}
