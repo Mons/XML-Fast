@@ -1339,7 +1339,7 @@ _hash2xml(hash,conf)
 		
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
 			ctx.attr = SvPV_nolen(*key);
-			warn ("Set attr to '%s'", ctx.attr);
+			// warn ("Set attr to '%s'", ctx.attr);
 		} else {
 			ctx.attr = "-";
 		}
