@@ -945,7 +945,7 @@ char *kv2x ( char *key, SV *val, compstate *p ) {
 	else
 	if ( strcmp( key, p->cdata ) == 0 ) {
 		h2xp(p, "<![CDATA[");
-		h2xpe(p, SvPV_nolen( val ));
+		h2xp(p, SvPV_nolen( val ));
 		h2xp(p, "]]>");
 	}
 	else
