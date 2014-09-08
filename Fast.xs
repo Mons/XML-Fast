@@ -967,9 +967,9 @@ char *kv2x ( char *key, SV *val, compstate *p ) {
 						nkey = HePV(ent, nlen);
 						if ( strncmp( nkey, p->attr, p->attl ) == 0 ) {
 							nkey += p->attl;
-							h2xp(p, " %s='",nkey);
+							h2xp(p, " %s=\"",nkey);
 							h2xpe(p, SvPV_nolen(HeVAL(ent)));
-							h2xp(p, "'");
+							h2xp(p, "\"");
 							continue;
 						}
 					}
