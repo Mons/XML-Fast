@@ -945,7 +945,7 @@ char *kv2x ( char *key, SV *val, compstate *p ) {
 	else
 	if ( strcmp( key, p->cdata ) == 0 ) {
 		h2xp(p, "<![CDATA[");
-		h2xpe(p, SvPV_nolen( val ));
+		h2xp(p, SvPV_nolen( val ));
 		h2xp(p, "]]>");
 	}
 	else
@@ -967,9 +967,9 @@ char *kv2x ( char *key, SV *val, compstate *p ) {
 						nkey = HePV(ent, nlen);
 						if ( strncmp( nkey, p->attr, p->attl ) == 0 ) {
 							nkey += p->attl;
-							h2xp(p, " %s='",nkey);
+							h2xp(p, " %s=\"",nkey);
 							h2xpe(p, SvPV_nolen(HeVAL(ent)));
-							h2xp(p, "'");
+							h2xp(p, "\"");
 							continue;
 						}
 					}
@@ -1339,7 +1339,7 @@ _hash2xml(hash,conf)
 		
 		if ((key = hv_fetch(conf, "attr", 4, 0)) && SvPOK(*key)) {
 			ctx.attr = SvPV_nolen(*key);
-			warn ("Set attr to '%s'", ctx.attr);
+			// warn ("Set attr to '%s'", ctx.attr);
 		} else {
 			ctx.attr = "-";
 		}
