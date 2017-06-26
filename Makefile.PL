@@ -17,8 +17,11 @@ WriteMakefile(
 	INC               => '-I.',
 	$AUTHOR ? (
 		CCFLAGS           => '-Wunused -std=c99', # only author mode
-	) : (),
-	OPTIMIZE		  => '-g',
+		OPTIMIZE          => '-g -O2 -funroll-loops',
+	) : (
+		CCFLAGS           => '-Wno-parentheses -Wno-pointer-sign',
+		OPTIMIZE          => '-O2 -funroll-loops',
+	),
 	OBJECT            => 'Fast.o xmlfast.o', # link all the C files too
 	META_ADD          => { license => 'perl' },
 );

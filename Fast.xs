@@ -891,30 +891,30 @@ void h2xpe( compstate *p, char *s ) {
 		switch (*s) {
 			warn("%c", *s);
 			case 0:
-				if (b < s) sv_catpvf( p->result, "%-.*s", s - b, b );
+				if (b < s) sv_catpvf( p->result, "%-.*s", (int)(s - b), b );
 				return;
 			case '<':
-				if (b < s) sv_catpvf( p->result, "%-.*s", s - b, b );
+				if (b < s) sv_catpvf( p->result, "%-.*s", (int)(s - b), b );
 				sv_catpvf( p->result, "%s", "&lt;" );
 				b = s+1;
 				break;
 			case '>':
-				if (b < s) sv_catpvf( p->result, "%-.*s", s - b, b );
+				if (b < s) sv_catpvf( p->result, "%-.*s", (int)(s - b), b );
 				sv_catpvf( p->result, "%s", "&gt;" );
 				b = s+1;
 				break;
 			case '"':
-				if (b < s) sv_catpvf( p->result, "%-.*s", s - b, b );
+				if (b < s) sv_catpvf( p->result, "%-.*s", (int)(s - b), b );
 				sv_catpvf( p->result, "%s", "&quot;" );
 				b = s+1;
 				break;
 			case '\'':
-				if (b < s) sv_catpvf( p->result, "%-.*s", s - b, b );
+				if (b < s) sv_catpvf( p->result, "%-.*s", (int)(s - b), b );
 				sv_catpvf( p->result, "%s", "&apos;" );
 				b = s+1;
 				break;
 			case '&':
-				if (b < s) sv_catpvf( p->result, "%-.*s", s - b, b );
+				if (b < s) sv_catpvf( p->result, "%-.*s", (int)(s - b), b );
 				sv_catpvf( p->result, "%s", "&amp;" );
 				b = s+1;
 				break;
@@ -926,8 +926,8 @@ void h2xpe( compstate *p, char *s ) {
 }
 
 
-char *kv2x ( char *key, SV *val, compstate *p );
-char *kv2x ( char *key, SV *val, compstate *p ) {
+void kv2x ( char *key, SV *val, compstate *p );
+void kv2x ( char *key, SV *val, compstate *p ) {
 	char closed;
 	
 	HE* ent;
@@ -1101,8 +1101,8 @@ char *kv2x ( char *key, SV *val, compstate *p ) {
 	}
 }
 
-char *h2x ( SV *x, compstate *p );
-char *h2x ( SV *x, compstate *p ) {
+void h2x ( SV *x, compstate *p );
+void h2x ( SV *x, compstate *p ) {
 	
 	HE* ent;
 	SV *val;
@@ -1160,11 +1160,13 @@ _test()
 		
 
 SV*
-_xml2hash(xml,conf)
-		char *xml;
+_xml2hash(xml_sv,conf)
+		SV *xml_sv;
 		HV *conf;
 	PROTOTYPE: $$
 	CODE:
+		SvGETMAGIC(xml_sv);
+		char *xml = SvPVbyte_nolen(xml_sv);
 		SV * RV;
 		
 		parser_state state;
