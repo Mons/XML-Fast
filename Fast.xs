@@ -858,7 +858,7 @@ _test()
 				 (HeKEY(he)))
 #endif
 //#define strcmp(a,b) ( a && b ? strcmp(a,b) : fprintf(stderr, "Failed to compare %s with %s at %s line %d.\n", a,b,__FILE__,__LINE__)+2 )
-#define strcmp(a,b) ( a && b ? strcmp(a,b) : 2 )
+#define mystrcmp(a,b) ( a && b ? strcmp(a,b) : 2 )
 
 void h2xout( char *data, compstate *p ) {
 	printf( "%*s", p->depth * 4,"" );
@@ -939,17 +939,17 @@ void kv2x ( char *key, SV *val, compstate *p ) {
 	SV **avv;
 	
 	debug("key=%s, val=%s",key, SvPV_nolen(val));
-	if ( strcmp( key, p->text ) == 0 ) {
+	if ( mystrcmp( key, p->text ) == 0 ) {
 		h2xpe(p, SvPV_nolen( val ));
 	}
 	else
-	if ( strcmp( key, p->cdata ) == 0 ) {
+	if ( mystrcmp( key, p->cdata ) == 0 ) {
 		h2xp(p, "<![CDATA[");
 		h2xp(p, SvPV_nolen( val ));
 		h2xp(p, "]]>");
 	}
 	else
-	if ( p->comm && strcmp( key, p->comm) == 0 ) {
+	if ( p->comm && mystrcmp( key, p->comm) == 0 ) {
 		debug("comm: %s", SvPV_nolen( val ));
 		h2xp(p, "<!-- ");
 		h2xpe(p, SvPV_nolen( val ));
@@ -1159,12 +1159,12 @@ _test()
 		croak("Force exit");
 		
 
-SV*
+void
 _xml2hash(xml_sv,conf)
 		SV *xml_sv;
 		HV *conf;
 	PROTOTYPE: $$
-	CODE:
+	PPCODE:
 		SvGETMAGIC(xml_sv);
 		char *xml = SvPVbyte_nolen(xml_sv);
 		SV * RV;
@@ -1311,12 +1311,12 @@ _xml2hash(xml_sv,conf)
 		ST(0) = RV;
 		XSRETURN(1);
 
-SV*
+void
 _hash2xml(hash,conf)
 		SV *hash;
 		HV *conf;
 	PROTOTYPE: $$
-	CODE:
+	PPCODE:
 		compstate ctx;
 		memset(&ctx,0,sizeof(parsestate));
 		

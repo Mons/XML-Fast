@@ -1,5 +1,11 @@
 Revision history for Perl extension XML::Fast.
 
+0.17  2017-06-30
+      - Fix nasty bug with CCFLAGS
+
+0.16  2017-06-27
+      - Fixes for RT tickets
+
 0.15  2015-08-25
       - Support emoji
 
